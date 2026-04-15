@@ -68,6 +68,8 @@ def run_workflow(force_train: bool = False) -> None:
 
 	if model_metrics is not None:
 		print("Model training metrics (new model trained):")
+		print(f"Dataset source: {model_metrics['dataset_source']}")
+		print(f"Samples used: {model_metrics['sample_count']}")
 		print(f"Accuracy: {model_metrics['accuracy']:.4f}")
 		print("Confusion matrix:")
 		print(model_metrics["confusion_matrix"])

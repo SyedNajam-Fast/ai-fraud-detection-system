@@ -2,14 +2,28 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Sequence
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DATABASE_PATH = PROJECT_ROOT / "data" / "fraud_detection.db"
 SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
+KAGGLE_VALUE_COLUMNS = tuple(f"v{index}" for index in range(1, 29))
+KAGGLE_INSERT_COLUMNS = (
+	"time_seconds",
+	"amount",
+	*KAGGLE_VALUE_COLUMNS,
+	"class_label",
+	"source_file",
+	"imported_at",
+)
+KAGGLE_INSERT_SQL = (
+	"INSERT INTO kaggle_transactions "
+	f"({', '.join(KAGGLE_INSERT_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(KAGGLE_INSERT_COLUMNS))})"
+)
 
 
 def _ensure_database_directory() -> None:
@@ -33,6 +47,53 @@ def initialize_database() -> None:
 	with get_connection() as connection:
 		with open(SCHEMA_PATH, "r", encoding="utf-8") as schema_file:
 			connection.executescript(schema_file.read())
+
+
+def clear_kaggle_transactions() -> int:
+	with get_connection() as connection:
+		cursor = connection.execute("DELETE FROM kaggle_transactions")
+		if cursor.rowcount is None or cursor.rowcount < 0:
+			return 0
+		return int(cursor.rowcount)
+
+
+def insert_kaggle_transaction_rows(rows: Sequence[tuple[Any, ...]]) -> int:
+	if not rows:
+		return 0
+
+	expected_length = len(KAGGLE_INSERT_COLUMNS)
+	for row in rows:
+		if len(row) != expected_length:
+			raise ValueError(
+				f"Each kaggle row must have {expected_length} values, got {len(row)}."
+			)
+
+	with get_connection() as connection:
+		connection.executemany(KAGGLE_INSERT_SQL, rows)
+	return len(rows)
+
+
+def count_kaggle_transactions() -> int:
+	with get_connection() as connection:
+		cursor = connection.execute("SELECT COUNT(*) AS row_count FROM kaggle_transactions")
+		row = cursor.fetchone()
+		return int(row["row_count"]) if row else 0
+
+
+def get_kaggle_label_distribution() -> Dict[int, int]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT class_label, COUNT(*) AS sample_count
+			FROM kaggle_transactions
+			GROUP BY class_label
+			ORDER BY class_label
+			"""
+		)
+		return {
+			int(row["class_label"]): int(row["sample_count"])
+			for row in cursor.fetchall()
+		}
 
 
 def get_or_create_user(name: str, email: str, card_number: str) -> int:
@@ -104,6 +165,6 @@ def create_fraud_alert(transaction_id: int, status: str = "open") -> int:
 			INSERT INTO fraud_alerts (transaction_id, alert_time, status)
 			VALUES (?, ?, ?)
 			""",
-			(transaction_id, datetime.utcnow().isoformat(timespec="seconds"), status),
+			(transaction_id, datetime.now(UTC).isoformat(timespec="seconds"), status),
 		)
 		return int(cursor.lastrowid)

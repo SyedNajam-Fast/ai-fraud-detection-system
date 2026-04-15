@@ -1,0 +1,6 @@
+data/
+context.txt
+next-phase-implementation-plan.md
+__pycache__/
+*.pyc
+model/*.pkl

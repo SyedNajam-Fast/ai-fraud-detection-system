@@ -25,6 +25,42 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
+### Download Kaggle Dataset (Optional)
+
+This project includes a helper script to download the `mlg-ulb/creditcardfraud` dataset using `kagglehub`.
+
+Prerequisites:
+
+- Kaggle credentials must be configured (`kaggle.json` or `KAGGLE_USERNAME` and `KAGGLE_KEY`).
+
+Run:
+
+```bash
+python src/download_dataset.py
+```
+
+After download, `creditcard.csv` is copied to:
+
+- `data/raw/creditcardfraud/creditcard.csv`
+
+### Import Kaggle Data Into Database
+
+Load the downloaded Kaggle records into SQLite (table: `kaggle_transactions`):
+
+```bash
+python src/import_kaggle_to_db.py
+```
+
+Useful options:
+
+```bash
+# Keep existing rows and append
+python src/import_kaggle_to_db.py --append
+
+# Tune batch size
+python src/import_kaggle_to_db.py --batch-size 10000
+```
+
 ## Run
 
 Train the model directly:
@@ -47,5 +83,7 @@ python src/main.py --force-train
 
 ## Notes
 
-- The training script uses `data/fraud_transactions.csv` if present.
-- If that file is absent, it generates a synthetic dataset so the project still runs end to end.
+- `model/train_model.py` prefers database data from `kaggle_transactions` when available.
+- If database training data is unavailable, it falls back to `data/fraud_transactions.csv`.
+- If CSV data is also unavailable, it generates a synthetic dataset so the project still runs end to end.
+- The Kaggle downloader fetches raw dataset files only and does not transform schema for training.

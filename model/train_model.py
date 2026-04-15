@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict
+import sqlite3
 import sys
 
 import joblib
@@ -19,6 +20,7 @@ from sklearn.preprocessing import OneHotEncoder
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 MODEL_PATH = PROJECT_ROOT / "model" / "model.pkl"
 DATA_PATH = PROJECT_ROOT / "data" / "fraud_transactions.csv"
+DATABASE_PATH = PROJECT_ROOT / "data" / "fraud_detection.db"
 
 
 def _ensure_project_root_on_path() -> None:
@@ -56,13 +58,83 @@ def _generate_synthetic_dataset(sample_size: int = 1500) -> pd.DataFrame:
 	)
 
 
-def _load_dataset() -> pd.DataFrame:
+def _map_kaggle_to_project_schema(kaggle_dataset: pd.DataFrame) -> pd.DataFrame:
+	location_score = kaggle_dataset["v1"] + 0.5 * kaggle_dataset["v2"] - 0.25 * kaggle_dataset["v3"]
+	merchant_score = kaggle_dataset["v4"] - kaggle_dataset["v5"]
+
+	location_values = np.select(
+		[
+			location_score < -2.0,
+			location_score < -0.5,
+			location_score < 0.75,
+			location_score < 2.0,
+		],
+		["Online", "Karachi", "Lahore", "Islamabad"],
+		default="Rawalpindi",
+	)
+
+	merchant_values = np.select(
+		[
+			merchant_score < -1.2,
+			merchant_score < -0.2,
+			merchant_score < 0.6,
+			merchant_score < 1.5,
+		],
+		["travel", "restaurant", "grocery_store", "online_retail"],
+		default="electronics_store",
+	)
+
+	return pd.DataFrame(
+		{
+			"amount": kaggle_dataset["amount"].astype(float),
+			"time": ((kaggle_dataset["time_seconds"] // 3600) % 24).astype(int),
+			"location": location_values,
+			"merchant": merchant_values,
+			"fraud": kaggle_dataset["class_label"].astype(int),
+		}
+	)
+
+
+def _load_dataset_from_database() -> pd.DataFrame | None:
+	if not DATABASE_PATH.exists():
+		return None
+
+	query = """
+	SELECT
+		time_seconds,
+		amount,
+		v1,
+		v2,
+		v3,
+		v4,
+		v5,
+		class_label
+	FROM kaggle_transactions
+	"""
+
+	try:
+		with sqlite3.connect(DATABASE_PATH) as connection:
+			kaggle_dataset = pd.read_sql_query(query, connection)
+	except (sqlite3.Error, pd.errors.DatabaseError):
+		return None
+
+	if kaggle_dataset.empty or kaggle_dataset["class_label"].nunique() < 2:
+		return None
+
+	return _map_kaggle_to_project_schema(kaggle_dataset)
+
+
+def _load_dataset() -> tuple[pd.DataFrame, str]:
+	database_dataset = _load_dataset_from_database()
+	if database_dataset is not None:
+		return database_dataset, "database:kaggle_transactions"
+
 	if DATA_PATH.exists():
 		dataset = pd.read_csv(DATA_PATH)
 		expected_columns = ["amount", "time", "location", "merchant", "fraud"]
 		if set(expected_columns).issubset(dataset.columns):
-			return dataset[expected_columns]
-	return _generate_synthetic_dataset()
+			return dataset[expected_columns], f"csv:{DATA_PATH.name}"
+	return _generate_synthetic_dataset(), "synthetic:generated"
 
 
 def _build_pipeline() -> Pipeline:
@@ -101,9 +173,12 @@ def _build_pipeline() -> Pipeline:
 
 
 def train_and_save_model() -> Dict[str, object]:
-	dataset = _load_dataset()
+	dataset, dataset_source = _load_dataset()
 	features = dataset[["amount", "time", "location", "merchant"]]
 	target = dataset["fraud"]
+
+	if target.nunique() < 2:
+		raise ValueError("Training dataset must include both fraud and non-fraud labels.")
 
 	x_train, x_test, y_train, y_test = train_test_split(
 		features,
@@ -127,6 +202,8 @@ def train_and_save_model() -> Dict[str, object]:
 		"accuracy": accuracy,
 		"confusion_matrix": matrix,
 		"model_path": str(MODEL_PATH),
+		"dataset_source": dataset_source,
+		"sample_count": int(len(dataset)),
 	}
 
 
@@ -134,6 +211,8 @@ if __name__ == "__main__":
 	_ensure_project_root_on_path()
 	results = train_and_save_model()
 	print(f"Saved model to {results['model_path']}")
+	print(f"Dataset source: {results['dataset_source']}")
+	print(f"Samples used: {results['sample_count']}")
 	print(f"Accuracy: {results['accuracy']:.4f}")
 	print("Confusion matrix:")
 	print(results["confusion_matrix"])
