@@ -39,6 +39,12 @@ Run the full database-to-model workflow:
 python src/main.py
 ```
 
+Force model retraining before workflow execution:
+
+```bash
+python src/main.py --force-train
+```
+
 ## Notes
 
 - The training script uses `data/fraud_transactions.csv` if present.
