@@ -1,0 +1,34 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS users (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	name TEXT NOT NULL,
+	email TEXT NOT NULL UNIQUE,
+	card_number TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL,
+	amount REAL NOT NULL,
+	time INTEGER NOT NULL,
+	location TEXT NOT NULL,
+	merchant TEXT NOT NULL,
+	FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS predictions (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	transaction_id INTEGER NOT NULL,
+	prediction INTEGER NOT NULL CHECK (prediction IN (0, 1)),
+	probability REAL NOT NULL,
+	FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS fraud_alerts (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	transaction_id INTEGER NOT NULL,
+	alert_time TEXT NOT NULL,
+	status TEXT NOT NULL DEFAULT 'open',
+	FOREIGN KEY (transaction_id) REFERENCES transactions (id) ON DELETE CASCADE
+);
