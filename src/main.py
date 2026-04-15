@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 import sys
 
@@ -16,12 +17,36 @@ from src.db import (  # noqa: E402
 	store_prediction,
 )
 from src.insert_data import insert_sample_transaction  # noqa: E402
-from src.predict import predict_transaction  # noqa: E402
+from src.predict import MODEL_PATH, predict_transaction  # noqa: E402
 
 
-def run_workflow() -> None:
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(description="Run end-to-end fraud detection workflow.")
+	parser.add_argument(
+		"--force-train",
+		action="store_true",
+		help="Retrain and overwrite the model before processing a transaction.",
+	)
+	return parser.parse_args()
+
+
+def ensure_model_available(force_train: bool = False) -> dict[str, object] | None:
+	"""Train and persist the model when required.
+
+	Returns model metrics only when training happens in this run.
+	"""
+	if not force_train and MODEL_PATH.exists():
+		return None
+	return train_and_save_model()
+
+
+def run_workflow(force_train: bool = False) -> None:
 	initialize_database()
-	metrics = train_and_save_model()
+	model_metrics = ensure_model_available(force_train=force_train)
+
+	# System workflow from context:
+	# 1) Insert transaction 2) Fetch transaction 3) Predict
+	# 4) Store prediction 5) Create alert if fraud
 	transaction_id = insert_sample_transaction()
 	transaction = fetch_transaction(transaction_id)
 
@@ -41,10 +66,14 @@ def run_workflow() -> None:
 	if prediction == 1:
 		alert_id = create_fraud_alert(transaction_id)
 
-	print("Model training metrics:")
-	print(f"Accuracy: {metrics['accuracy']:.4f}")
-	print("Confusion matrix:")
-	print(metrics["confusion_matrix"])
+	if model_metrics is not None:
+		print("Model training metrics (new model trained):")
+		print(f"Accuracy: {model_metrics['accuracy']:.4f}")
+		print("Confusion matrix:")
+		print(model_metrics["confusion_matrix"])
+	else:
+		print(f"Using existing trained model: {MODEL_PATH}")
+
 	print(f"Transaction ID: {transaction_id}")
 	print(f"Prediction: {prediction}")
 	print(f"Fraud probability: {probability:.4f}")
@@ -53,4 +82,5 @@ def run_workflow() -> None:
 
 
 if __name__ == "__main__":
-	run_workflow()
+	arguments = parse_args()
+	run_workflow(force_train=arguments.force_train)
