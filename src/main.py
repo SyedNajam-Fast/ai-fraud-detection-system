@@ -47,12 +47,13 @@ def _install_requirements_if_needed() -> None:
 def _load_runtime_modules():
 	_ensure_project_root_on_path()
 
-	from model.train_model import MODEL_PATH, train_and_save_model
+	from model.train_model import MODEL_METADATA_PATH, MODEL_PATH, train_and_save_model
 	from src.db import create_fraud_alert, fetch_transaction, initialize_database, store_prediction
 	from src.insert_data import insert_sample_transaction
-	from src.predict import predict_transaction
+	from src.predict import load_model_metadata, predict_transaction
 
 	return {
+		"MODEL_METADATA_PATH": MODEL_METADATA_PATH,
 		"MODEL_PATH": MODEL_PATH,
 		"train_and_save_model": train_and_save_model,
 		"create_fraud_alert": create_fraud_alert,
@@ -60,6 +61,7 @@ def _load_runtime_modules():
 		"initialize_database": initialize_database,
 		"store_prediction": store_prediction,
 		"insert_sample_transaction": insert_sample_transaction,
+		"load_model_metadata": load_model_metadata,
 		"predict_transaction": predict_transaction,
 	}
 
@@ -81,9 +83,10 @@ def ensure_model_available(force_train: bool = False) -> dict[str, object] | Non
 	"""
 	modules = _load_runtime_modules()
 	model_path = modules["MODEL_PATH"]
+	model_metadata_path = modules["MODEL_METADATA_PATH"]
 	train_and_save_model = modules["train_and_save_model"]
 
-	if not force_train and model_path.exists():
+	if not force_train and model_path.exists() and model_metadata_path.exists():
 		return None
 	return train_and_save_model()
 
@@ -99,6 +102,7 @@ def run_workflow(force_train: bool = False) -> None:
 	store_prediction = modules["store_prediction"]
 	create_fraud_alert = modules["create_fraud_alert"]
 	model_path = modules["MODEL_PATH"]
+	load_model_metadata = modules["load_model_metadata"]
 
 	initialize_database()
 	model_metrics = ensure_model_available(force_train=force_train)
@@ -129,11 +133,22 @@ def run_workflow(force_train: bool = False) -> None:
 		print("Model training metrics (new model trained):")
 		print(f"Dataset source: {model_metrics['dataset_source']}")
 		print(f"Samples used: {model_metrics['sample_count']}")
+		print(f"Selected model: {model_metrics['selected_model_name']}")
+		print(f"Selection metric: {model_metrics['selection_metric']}")
+		print(f"Decision threshold: {model_metrics['selected_threshold']:.2f}")
+		print(f"Validation F1: {model_metrics['validation_metrics']['f1']:.4f}")
+		print(f"Test F1: {model_metrics['test_metrics']['f1']:.4f}")
+		print(f"Overfit check: {'flagged' if model_metrics['overfit_flag'] else 'passed'}")
+		print(f"Underfit check: {'flagged' if model_metrics['underfit_flag'] else 'passed'}")
 		print(f"Accuracy: {model_metrics['accuracy']:.4f}")
 		print("Confusion matrix:")
 		print(model_metrics["confusion_matrix"])
 	else:
 		print(f"Using existing trained model: {model_path}")
+		metadata = load_model_metadata()
+		if metadata:
+			print(f"Selected model: {metadata.get('selected_model_name', 'unknown')}")
+			print(f"Decision threshold: {float(metadata.get('selected_threshold', 0.5)):.2f}")
 
 	print(f"Transaction ID: {transaction_id}")
 	print(f"Prediction: {prediction}")

@@ -1,0 +1,192 @@
+{
+  "dataset_source": "database:kaggle_transactions",
+  "selected_model_name": "random_forest",
+  "selection_metric": "validation_average_precision",
+  "selected_threshold": 0.8184323130643488,
+  "sample_count": 284807,
+  "train_count": 170883,
+  "validation_count": 56962,
+  "test_count": 56962,
+  "train_metrics": {
+    "accuracy": 0.9987535331191517,
+    "precision": 0.8942307692307693,
+    "recall": 0.3152542372881356,
+    "f1": 0.46616541353383456,
+    "average_precision": 0.6832845862140389,
+    "confusion_matrix": [
+      [
+        170577,
+        11
+      ],
+      [
+        202,
+        93
+      ]
+    ]
+  },
+  "validation_metrics": {
+    "accuracy": 0.9984726659878516,
+    "precision": 0.8333333333333334,
+    "recall": 0.15151515151515152,
+    "f1": 0.2564102564102564,
+    "average_precision": 0.16823836982617807,
+    "confusion_matrix": [
+      [
+        56860,
+        3
+      ],
+      [
+        84,
+        15
+      ]
+    ]
+  },
+  "test_metrics": {
+    "accuracy": 0.9981742214107651,
+    "precision": 0.42105263157894735,
+    "recall": 0.16326530612244897,
+    "f1": 0.23529411764705882,
+    "average_precision": 0.1628223917441903,
+    "confusion_matrix": [
+      [
+        56842,
+        22
+      ],
+      [
+        82,
+        16
+      ]
+    ]
+  },
+  "overfit_flag": true,
+  "underfit_flag": true,
+  "created_at": "2026-04-16T09:26:04+00:00",
+  "candidates": [
+    {
+      "model_name": "logistic_regression",
+      "selected_threshold": 0.9992489095318565,
+      "threshold_f1": 0.11707317073170732,
+      "train_metrics": {
+        "accuracy": 0.9967170520180474,
+        "precision": 0.11781609195402298,
+        "recall": 0.13898305084745763,
+        "f1": 0.12752721617418353,
+        "average_precision": 0.04427695200273498,
+        "confusion_matrix": [
+          [
+            170281,
+            307
+          ],
+          [
+            254,
+            41
+          ]
+        ]
+      },
+      "validation_metrics": {
+        "accuracy": 0.9968224430321969,
+        "precision": 0.11320754716981132,
+        "recall": 0.12121212121212122,
+        "f1": 0.11707317073170732,
+        "average_precision": 0.030326139276024577,
+        "confusion_matrix": [
+          [
+            56769,
+            94
+          ],
+          [
+            87,
+            12
+          ]
+        ]
+      },
+      "fit_gap": 0.010454045442476204,
+      "overfit_flag": false,
+      "underfit_flag": true
+    },
+    {
+      "model_name": "random_forest",
+      "selected_threshold": 0.8184323130643488,
+      "threshold_f1": 0.25641025641025644,
+      "train_metrics": {
+        "accuracy": 0.9987535331191517,
+        "precision": 0.8942307692307693,
+        "recall": 0.3152542372881356,
+        "f1": 0.46616541353383456,
+        "average_precision": 0.6832845862140389,
+        "confusion_matrix": [
+          [
+            170577,
+            11
+          ],
+          [
+            202,
+            93
+          ]
+        ]
+      },
+      "validation_metrics": {
+        "accuracy": 0.9984726659878516,
+        "precision": 0.8333333333333334,
+        "recall": 0.15151515151515152,
+        "f1": 0.2564102564102564,
+        "average_precision": 0.16823836982617807,
+        "confusion_matrix": [
+          [
+            56860,
+            3
+          ],
+          [
+            84,
+            15
+          ]
+        ]
+      },
+      "fit_gap": 0.20975515712357817,
+      "overfit_flag": true,
+      "underfit_flag": true
+    },
+    {
+      "model_name": "extra_trees",
+      "selected_threshold": 0.8504583439016113,
+      "threshold_f1": 0.16176470588235292,
+      "train_metrics": {
+        "accuracy": 0.9995493992965947,
+        "precision": 0.9325396825396826,
+        "recall": 0.7966101694915254,
+        "f1": 0.8592321755027422,
+        "average_precision": 0.9119609238172169,
+        "confusion_matrix": [
+          [
+            170571,
+            17
+          ],
+          [
+            60,
+            235
+          ]
+        ]
+      },
+      "validation_metrics": {
+        "accuracy": 0.9979986657771848,
+        "precision": 0.2972972972972973,
+        "recall": 0.1111111111111111,
+        "f1": 0.16176470588235295,
+        "average_precision": 0.0753845303736808,
+        "confusion_matrix": [
+          [
+            56837,
+            26
+          ],
+          [
+            88,
+            11
+          ]
+        ]
+      },
+      "fit_gap": 0.6974674696203893,
+      "overfit_flag": true,
+      "underfit_flag": true
+    }
+  ]
+}

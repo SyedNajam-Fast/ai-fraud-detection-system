@@ -4,33 +4,39 @@
 
 This repository implements an academic fraud detection system with two connected layers:
 
-1. A Random Forest classifier that predicts whether a transaction is fraudulent.
-2. A relational database layer that stores users, transactions, predictions, and fraud alerts.
+1. A multi-model machine learning pipeline that compares Logistic Regression, Random Forest, and Extra Trees classifiers.
+2. A relational database layer that stores users, transactions, predictions, fraud alerts, and model training history.
 
 ## Architecture
 
-The workflow is intentionally simple:
+The workflow now includes model selection and validation checks:
 
 1. Insert a transaction into the database.
 2. Fetch the transaction data.
-3. Pass the transaction features into the trained model.
-4. Produce a fraud prediction and probability.
-5. Store the prediction in the database.
-6. Create a fraud alert when the prediction is fraudulent.
+3. Train and compare multiple candidate models when needed.
+4. Select the best model using validation metrics and threshold tuning.
+5. Pass the transaction features into the trained model.
+6. Produce a fraud prediction and probability.
+7. Store the prediction in the database.
+8. Create a fraud alert when the prediction is fraudulent.
 
 ## Implementation Details
 
 - Database: SQLite, initialized from `database/schema.sql`
-- Model: `RandomForestClassifier`
+- Models: `LogisticRegression`, `RandomForestClassifier`, `ExtraTreesClassifier`
 - Features: `amount`, `time`, `location`, `merchant`
 - Saved artifact: `model/model.pkl`
+- Model metadata: `model/model_metadata.json`
+- Training registry: `model_training_runs` and `model_candidate_metrics`
 
 ## Evaluation
 
 The training script reports:
 
-- Accuracy
-- Confusion matrix
+- Selected model name and threshold
+- Validation F1 and test F1
+- Overfit and underfit checks
+- Accuracy and confusion matrix
 
 ## Run Summary
 

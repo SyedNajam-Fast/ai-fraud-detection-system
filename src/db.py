@@ -24,6 +24,57 @@ KAGGLE_INSERT_SQL = (
 	f"({', '.join(KAGGLE_INSERT_COLUMNS)}) "
 	f"VALUES ({', '.join(['?'] * len(KAGGLE_INSERT_COLUMNS))})"
 )
+MODEL_TRAINING_RUN_COLUMNS = (
+	"dataset_source",
+	"selection_metric",
+	"selected_model_name",
+	"selected_threshold",
+	"sample_count",
+	"train_count",
+	"validation_count",
+	"test_count",
+	"train_f1",
+	"validation_f1",
+	"test_f1",
+	"validation_average_precision",
+	"test_average_precision",
+	"overfit_flag",
+	"underfit_flag",
+	"status",
+	"started_at",
+	"finished_at",
+	"notes",
+)
+MODEL_TRAINING_RUN_SQL = (
+	"INSERT INTO model_training_runs "
+	f"({', '.join(MODEL_TRAINING_RUN_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(MODEL_TRAINING_RUN_COLUMNS))})"
+)
+MODEL_CANDIDATE_COLUMNS = (
+	"run_id",
+	"model_name",
+	"cv_f1_mean",
+	"cv_f1_std",
+	"train_precision",
+	"train_recall",
+	"train_f1",
+	"validation_precision",
+	"validation_recall",
+	"validation_f1",
+	"validation_average_precision",
+	"train_average_precision",
+	"validation_threshold",
+	"fit_gap",
+	"overfit_flag",
+	"underfit_flag",
+	"confusion_matrix_json",
+	"selected",
+)
+MODEL_CANDIDATE_SQL = (
+	"INSERT INTO model_candidate_metrics "
+	f"({', '.join(MODEL_CANDIDATE_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(MODEL_CANDIDATE_COLUMNS))})"
+)
 
 
 def _ensure_database_directory() -> None:
@@ -94,6 +145,20 @@ def get_kaggle_label_distribution() -> Dict[int, int]:
 			int(row["class_label"]): int(row["sample_count"])
 			for row in cursor.fetchall()
 		}
+
+
+def insert_model_training_run(run_data: Dict[str, Any]) -> int:
+	values = [run_data[column] for column in MODEL_TRAINING_RUN_COLUMNS]
+	with get_connection() as connection:
+		cursor = connection.execute(MODEL_TRAINING_RUN_SQL, values)
+		return int(cursor.lastrowid)
+
+
+def insert_model_candidate_metric(metric_data: Dict[str, Any]) -> int:
+	values = [metric_data[column] for column in MODEL_CANDIDATE_COLUMNS]
+	with get_connection() as connection:
+		cursor = connection.execute(MODEL_CANDIDATE_SQL, values)
+		return int(cursor.lastrowid)
 
 
 def get_or_create_user(name: str, email: str, card_number: str) -> int:

@@ -75,8 +75,59 @@ CREATE TABLE IF NOT EXISTS kaggle_transactions (
     imported_at TEXT NOT NULL
 );
 
+-- Model registry for multi-model training and audit history.
+CREATE TABLE IF NOT EXISTS model_training_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    dataset_source TEXT NOT NULL,
+    selection_metric TEXT NOT NULL DEFAULT 'validation_average_precision',
+    selected_model_name TEXT NOT NULL,
+    selected_threshold REAL NOT NULL CHECK (selected_threshold BETWEEN 0 AND 1),
+    sample_count INTEGER NOT NULL CHECK (sample_count > 0),
+    train_count INTEGER NOT NULL CHECK (train_count > 0),
+    validation_count INTEGER NOT NULL CHECK (validation_count > 0),
+    test_count INTEGER NOT NULL CHECK (test_count > 0),
+    train_f1 REAL NOT NULL CHECK (train_f1 BETWEEN 0 AND 1),
+    validation_f1 REAL NOT NULL CHECK (validation_f1 BETWEEN 0 AND 1),
+    test_f1 REAL NOT NULL CHECK (test_f1 BETWEEN 0 AND 1),
+    validation_average_precision REAL NOT NULL CHECK (validation_average_precision BETWEEN 0 AND 1),
+    test_average_precision REAL NOT NULL CHECK (test_average_precision BETWEEN 0 AND 1),
+    overfit_flag INTEGER NOT NULL CHECK (overfit_flag IN (0, 1)),
+    underfit_flag INTEGER NOT NULL CHECK (underfit_flag IN (0, 1)),
+    status TEXT NOT NULL DEFAULT 'completed' CHECK (status IN ('completed', 'failed')),
+    started_at TEXT NOT NULL,
+    finished_at TEXT NOT NULL,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS model_candidate_metrics (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    model_name TEXT NOT NULL,
+    cv_f1_mean REAL,
+    cv_f1_std REAL,
+    train_precision REAL NOT NULL CHECK (train_precision BETWEEN 0 AND 1),
+    train_recall REAL NOT NULL CHECK (train_recall BETWEEN 0 AND 1),
+    train_f1 REAL NOT NULL CHECK (train_f1 BETWEEN 0 AND 1),
+    validation_precision REAL NOT NULL CHECK (validation_precision BETWEEN 0 AND 1),
+    validation_recall REAL NOT NULL CHECK (validation_recall BETWEEN 0 AND 1),
+    validation_f1 REAL NOT NULL CHECK (validation_f1 BETWEEN 0 AND 1),
+    validation_average_precision REAL NOT NULL CHECK (validation_average_precision BETWEEN 0 AND 1),
+    train_average_precision REAL NOT NULL CHECK (train_average_precision BETWEEN 0 AND 1),
+    validation_threshold REAL NOT NULL CHECK (validation_threshold BETWEEN 0 AND 1),
+    fit_gap REAL NOT NULL,
+    overfit_flag INTEGER NOT NULL CHECK (overfit_flag IN (0, 1)),
+    underfit_flag INTEGER NOT NULL CHECK (underfit_flag IN (0, 1)),
+    confusion_matrix_json TEXT NOT NULL,
+    selected INTEGER NOT NULL DEFAULT 0 CHECK (selected IN (0, 1)),
+    FOREIGN KEY (run_id) REFERENCES model_training_runs (id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_transaction_id ON predictions (transaction_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_transaction_id ON fraud_alerts (transaction_id);
 CREATE INDEX IF NOT EXISTS idx_kaggle_transactions_class_label ON kaggle_transactions (class_label);
 CREATE INDEX IF NOT EXISTS idx_kaggle_transactions_source_file ON kaggle_transactions (source_file);
+CREATE INDEX IF NOT EXISTS idx_model_training_runs_dataset_source ON model_training_runs (dataset_source);
+CREATE INDEX IF NOT EXISTS idx_model_training_runs_selected_model ON model_training_runs (selected_model_name);
+CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_run_id ON model_candidate_metrics (run_id);
+CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_selected ON model_candidate_metrics (selected);

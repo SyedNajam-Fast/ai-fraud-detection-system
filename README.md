@@ -71,6 +71,8 @@ python src/main.py
 
 If required packages are missing, `main.py` installs them from `requirements.txt`, then it initializes the database, trains the model if needed, and runs the prediction workflow.
 
+The training pipeline now compares multiple models, tunes the decision threshold, and records model-run metadata in SQLite before prediction starts.
+
 Train the model directly:
 
 ```bash
@@ -95,3 +97,4 @@ python src/main.py --force-train
 - If database training data is unavailable, it falls back to `data/fraud_transactions.csv`.
 - If CSV data is also unavailable, it generates a synthetic dataset so the project still runs end to end.
 - The Kaggle downloader fetches raw dataset files only and does not transform schema for training.
+- The selected model, threshold, and validation/test checks are saved to `model/model_metadata.json` and the SQLite model registry tables.
