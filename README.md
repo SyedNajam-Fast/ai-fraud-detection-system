@@ -63,6 +63,14 @@ python src/import_kaggle_to_db.py --batch-size 10000
 
 ## Run
 
+The main entrypoint now bootstraps itself. On a fresh clone, run:
+
+```bash
+python src/main.py
+```
+
+If required packages are missing, `main.py` installs them from `requirements.txt`, then it initializes the database, trains the model if needed, and runs the prediction workflow.
+
 Train the model directly:
 
 ```bash
