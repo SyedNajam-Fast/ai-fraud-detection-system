@@ -5,12 +5,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 import sys
 
-import pandas as pd
-
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
 	sys.path.insert(0, str(PROJECT_ROOT))
+
+import pandas as pd
+
+from src.core.config import KAGGLE_CSV_PATH, ensure_project_root_on_path
+
+
+ensure_project_root_on_path()
 
 from src.db import (  # noqa: E402
 	clear_kaggle_transactions,
@@ -20,7 +24,7 @@ from src.db import (  # noqa: E402
 	insert_kaggle_transaction_rows,
 )
 
-DEFAULT_CSV_PATH = PROJECT_ROOT / "data" / "raw" / "creditcardfraud" / "creditcard.csv"
+DEFAULT_CSV_PATH = KAGGLE_CSV_PATH
 REQUIRED_COLUMNS = ["Time", "Amount", *[f"V{i}" for i in range(1, 29)], "Class"]
 
 

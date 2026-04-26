@@ -2,19 +2,17 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
-import subprocess
 from pathlib import Path
+import subprocess
 import sys
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-REQUIREMENTS_PATH = PROJECT_ROOT / "requirements.txt"
-REQUIRED_PACKAGES = ["pandas", "numpy", "sklearn", "joblib", "kagglehub"]
+if str(PROJECT_ROOT) not in sys.path:
+	sys.path.insert(0, str(PROJECT_ROOT))
 
-
-def _ensure_project_root_on_path() -> None:
-	if str(PROJECT_ROOT) not in sys.path:
-		sys.path.insert(0, str(PROJECT_ROOT))
+from src.core.config import REQUIRED_PACKAGES, REQUIREMENTS_PATH, ensure_project_root_on_path
+from src.core.console import print_info, print_ok, print_section
+from src.services.workflow import run_workflow
 
 
 def _missing_packages() -> list[str]:
@@ -30,7 +28,7 @@ def _install_requirements_if_needed() -> None:
 	if not missing_packages:
 		return
 
-	print("Missing dependencies detected. Installing requirements from requirements.txt...")
+	print_info("Missing dependencies detected. Installing requirements from requirements.txt...")
 	install_command = [sys.executable, "-m", "pip", "install", "-r", str(REQUIREMENTS_PATH)]
 	result = subprocess.run(install_command, check=False)
 	if result.returncode != 0:
@@ -42,28 +40,7 @@ def _install_requirements_if_needed() -> None:
 			"Dependency installation completed, but these packages are still missing: "
 			+ ", ".join(remaining_missing)
 		)
-
-
-def _load_runtime_modules():
-	_ensure_project_root_on_path()
-
-	from model.train_model import MODEL_METADATA_PATH, MODEL_PATH, train_and_save_model
-	from src.db import create_fraud_alert, fetch_transaction, initialize_database, store_prediction
-	from src.insert_data import insert_sample_transaction
-	from src.predict import load_model_metadata, predict_transaction
-
-	return {
-		"MODEL_METADATA_PATH": MODEL_METADATA_PATH,
-		"MODEL_PATH": MODEL_PATH,
-		"train_and_save_model": train_and_save_model,
-		"create_fraud_alert": create_fraud_alert,
-		"fetch_transaction": fetch_transaction,
-		"initialize_database": initialize_database,
-		"store_prediction": store_prediction,
-		"insert_sample_transaction": insert_sample_transaction,
-		"load_model_metadata": load_model_metadata,
-		"predict_transaction": predict_transaction,
-	}
+	print_ok("Dependencies are ready.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -76,87 +53,49 @@ def parse_args() -> argparse.Namespace:
 	return parser.parse_args()
 
 
-def ensure_model_available(force_train: bool = False) -> dict[str, object] | None:
-	"""Train and persist the model when required.
+def _print_training_summary(model_metrics: dict[str, object] | None) -> None:
+	if model_metrics is None:
+		from src.predict import load_model_metadata
 
-	Returns model metrics only when training happens in this run.
-	"""
-	modules = _load_runtime_modules()
-	model_path = modules["MODEL_PATH"]
-	model_metadata_path = modules["MODEL_METADATA_PATH"]
-	train_and_save_model = modules["train_and_save_model"]
-
-	if not force_train and model_path.exists() and model_metadata_path.exists():
-		return None
-	return train_and_save_model()
-
-
-def run_workflow(force_train: bool = False) -> None:
-	_install_requirements_if_needed()
-	modules = _load_runtime_modules()
-
-	initialize_database = modules["initialize_database"]
-	insert_sample_transaction = modules["insert_sample_transaction"]
-	fetch_transaction = modules["fetch_transaction"]
-	predict_transaction = modules["predict_transaction"]
-	store_prediction = modules["store_prediction"]
-	create_fraud_alert = modules["create_fraud_alert"]
-	model_path = modules["MODEL_PATH"]
-	load_model_metadata = modules["load_model_metadata"]
-
-	initialize_database()
-	model_metrics = ensure_model_available(force_train=force_train)
-
-	# System workflow from context:
-	# 1) Insert transaction 2) Fetch transaction 3) Predict
-	# 4) Store prediction 5) Create alert if fraud
-	transaction_id = insert_sample_transaction()
-	transaction = fetch_transaction(transaction_id)
-
-	if transaction is None:
-		raise RuntimeError("Inserted transaction could not be retrieved from the database.")
-
-	payload = {
-		"amount": transaction["amount"],
-		"time": transaction["time"],
-		"location": transaction["location"],
-		"merchant": transaction["merchant"],
-	}
-	prediction, probability = predict_transaction(payload)
-	store_prediction(transaction_id, prediction, probability)
-
-	alert_id = None
-	if prediction == 1:
-		alert_id = create_fraud_alert(transaction_id)
-
-	if model_metrics is not None:
-		print("Model training metrics (new model trained):")
-		print(f"Dataset source: {model_metrics['dataset_source']}")
-		print(f"Samples used: {model_metrics['sample_count']}")
-		print(f"Selected model: {model_metrics['selected_model_name']}")
-		print(f"Selection metric: {model_metrics['selection_metric']}")
-		print(f"Decision threshold: {model_metrics['selected_threshold']:.2f}")
-		print(f"Validation F1: {model_metrics['validation_metrics']['f1']:.4f}")
-		print(f"Test F1: {model_metrics['test_metrics']['f1']:.4f}")
-		print(f"Overfit check: {'flagged' if model_metrics['overfit_flag'] else 'passed'}")
-		print(f"Underfit check: {'flagged' if model_metrics['underfit_flag'] else 'passed'}")
-		print(f"Accuracy: {model_metrics['accuracy']:.4f}")
-		print("Confusion matrix:")
-		print(model_metrics["confusion_matrix"])
-	else:
-		print(f"Using existing trained model: {model_path}")
+		print_info("Using existing trained model artifact.")
 		metadata = load_model_metadata()
 		if metadata:
-			print(f"Selected model: {metadata.get('selected_model_name', 'unknown')}")
-			print(f"Decision threshold: {float(metadata.get('selected_threshold', 0.5)):.2f}")
+			print_info(f"Selected model: {metadata.get('selected_model_name', 'unknown')}")
+			print_info(f"Decision threshold: {float(metadata.get('selected_threshold', 0.5)):.2f}")
+		return
 
-	print(f"Transaction ID: {transaction_id}")
-	print(f"Prediction: {prediction}")
-	print(f"Fraud probability: {probability:.4f}")
-	if alert_id is not None:
-		print(f"Fraud alert created with ID: {alert_id}")
+	print_section("Training Summary")
+	print_info(f"Dataset source: {model_metrics['dataset_source']}")
+	print_info(f"Samples used: {model_metrics['sample_count']}")
+	print_info(f"Selected model: {model_metrics['selected_model_name']}")
+	print_info(f"Selection metric: {model_metrics['selection_metric']}")
+	print_info(f"Decision threshold: {model_metrics['selected_threshold']:.2f}")
+	print_info(f"Validation F1: {model_metrics['validation_metrics']['f1']:.4f}")
+	print_info(f"Test F1: {model_metrics['test_metrics']['f1']:.4f}")
+	print_info(f"Overfit check: {'flagged' if model_metrics['overfit_flag'] else 'passed'}")
+	print_info(f"Underfit check: {'flagged' if model_metrics['underfit_flag'] else 'passed'}")
+	print_info(f"Accuracy: {model_metrics['accuracy']:.4f}")
+	print("Confusion matrix:")
+	print(model_metrics["confusion_matrix"])
+
+
+def _print_workflow_summary(result) -> None:
+	print_section("Workflow Summary")
+	print_info(f"Model artifact: {result.model_path}")
+	print_info(f"Metadata file: {result.model_metadata_path}")
+	print_info(f"Transaction ID: {result.transaction_id}")
+	print_info(f"Prediction: {result.prediction}")
+	print_info(f"Fraud probability: {result.probability:.4f}")
+	if result.alert_id is not None:
+		print_ok(f"Fraud alert created with ID: {result.alert_id}")
+	else:
+		print_info("No fraud alert was created for this transaction.")
 
 
 if __name__ == "__main__":
+	ensure_project_root_on_path()
 	arguments = parse_args()
-	run_workflow(force_train=arguments.force_train)
+	_install_requirements_if_needed()
+	result = run_workflow(force_train=arguments.force_train)
+	_print_training_summary(result.model_metrics)
+	_print_workflow_summary(result)

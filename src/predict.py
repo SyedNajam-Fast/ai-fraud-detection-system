@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Dict, Tuple
 
 import joblib
 import pandas as pd
 
+from src.core.config import MODEL_METADATA_PATH, MODEL_PATH
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = PROJECT_ROOT / "model" / "model.pkl"
-MODEL_METADATA_PATH = PROJECT_ROOT / "model" / "model_metadata.json"
+
 DEFAULT_PREDICTION_THRESHOLD = 0.5
 
 
 def load_model():
 	if not MODEL_PATH.exists():
 		raise FileNotFoundError(
-			f"Trained model not found at {MODEL_PATH}. Run model/train_model.py first."
+			f"Trained model not found at {MODEL_PATH}. Run python src/main.py --force-train first."
 		)
 	return joblib.load(MODEL_PATH)
 

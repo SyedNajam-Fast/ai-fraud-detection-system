@@ -122,6 +122,66 @@ CREATE TABLE IF NOT EXISTS model_candidate_metrics (
     FOREIGN KEY (run_id) REFERENCES model_training_runs (id) ON DELETE CASCADE
 );
 
+-- Raw dataset registrations for profiling and reporting.
+CREATE TABLE IF NOT EXISTS raw_dataset_uploads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    source_path TEXT NOT NULL,
+    file_size_bytes INTEGER NOT NULL CHECK (file_size_bytes >= 0),
+    row_count INTEGER NOT NULL CHECK (row_count >= 0),
+    column_count INTEGER NOT NULL CHECK (column_count >= 0),
+    target_column TEXT,
+    status TEXT NOT NULL DEFAULT 'profiled' CHECK (status IN ('profiled', 'failed')),
+    created_at TEXT NOT NULL
+);
+
+-- Dataset-level profiling summaries.
+CREATE TABLE IF NOT EXISTS dataset_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    upload_id INTEGER NOT NULL,
+    row_count INTEGER NOT NULL CHECK (row_count >= 0),
+    column_count INTEGER NOT NULL CHECK (column_count >= 0),
+    duplicate_row_count INTEGER NOT NULL CHECK (duplicate_row_count >= 0),
+    missing_cell_count INTEGER NOT NULL CHECK (missing_cell_count >= 0),
+    numeric_column_count INTEGER NOT NULL CHECK (numeric_column_count >= 0),
+    categorical_column_count INTEGER NOT NULL CHECK (categorical_column_count >= 0),
+    datetime_column_count INTEGER NOT NULL CHECK (datetime_column_count >= 0),
+    target_column TEXT,
+    target_cardinality INTEGER,
+    class_imbalance_ratio REAL,
+    warnings_json TEXT NOT NULL,
+    summary_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (upload_id) REFERENCES raw_dataset_uploads (id) ON DELETE CASCADE
+);
+
+-- Column-level profiling details and explanations.
+CREATE TABLE IF NOT EXISTS feature_profiles (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    upload_id INTEGER NOT NULL,
+    dataset_profile_id INTEGER NOT NULL,
+    column_name TEXT NOT NULL,
+    inferred_role TEXT NOT NULL,
+    inferred_dtype TEXT NOT NULL,
+    pandas_dtype TEXT NOT NULL,
+    non_null_count INTEGER NOT NULL CHECK (non_null_count >= 0),
+    missing_count INTEGER NOT NULL CHECK (missing_count >= 0),
+    missing_ratio REAL NOT NULL CHECK (missing_ratio BETWEEN 0 AND 1),
+    unique_count INTEGER NOT NULL CHECK (unique_count >= 0),
+    unique_ratio REAL NOT NULL CHECK (unique_ratio BETWEEN 0 AND 1),
+    sample_values_json TEXT NOT NULL,
+    min_value REAL,
+    max_value REAL,
+    mean_value REAL,
+    std_value REAL,
+    simple_description TEXT NOT NULL,
+    technical_description TEXT NOT NULL,
+    target_candidate INTEGER NOT NULL DEFAULT 0 CHECK (target_candidate IN (0, 1)),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (upload_id) REFERENCES raw_dataset_uploads (id) ON DELETE CASCADE,
+    FOREIGN KEY (dataset_profile_id) REFERENCES dataset_profiles (id) ON DELETE CASCADE
+);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_user_id ON transactions (user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_transaction_id ON predictions (transaction_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_transaction_id ON fraud_alerts (transaction_id);
@@ -131,3 +191,8 @@ CREATE INDEX IF NOT EXISTS idx_model_training_runs_dataset_source ON model_train
 CREATE INDEX IF NOT EXISTS idx_model_training_runs_selected_model ON model_training_runs (selected_model_name);
 CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_run_id ON model_candidate_metrics (run_id);
 CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_selected ON model_candidate_metrics (selected);
+CREATE INDEX IF NOT EXISTS idx_raw_dataset_uploads_filename ON raw_dataset_uploads (filename);
+CREATE INDEX IF NOT EXISTS idx_dataset_profiles_upload_id ON dataset_profiles (upload_id);
+CREATE INDEX IF NOT EXISTS idx_feature_profiles_upload_id ON feature_profiles (upload_id);
+CREATE INDEX IF NOT EXISTS idx_feature_profiles_profile_id ON feature_profiles (dataset_profile_id);
+CREATE INDEX IF NOT EXISTS idx_feature_profiles_column_name ON feature_profiles (column_name);

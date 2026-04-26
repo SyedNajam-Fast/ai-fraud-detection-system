@@ -3,13 +3,23 @@ from __future__ import annotations
 import sqlite3
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any, Dict, Iterator, Optional, Sequence
 
+from src.core.config import DATABASE_PATH, SCHEMA_PATH
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATABASE_PATH = PROJECT_ROOT / "data" / "fraud_detection.db"
-SCHEMA_PATH = PROJECT_ROOT / "database" / "schema.sql"
+
+EXPECTED_TABLES = (
+	"dataset_profiles",
+	"feature_profiles",
+	"fraud_alerts",
+	"kaggle_transactions",
+	"model_candidate_metrics",
+	"model_training_runs",
+	"predictions",
+	"raw_dataset_uploads",
+	"transactions",
+	"users",
+)
 KAGGLE_VALUE_COLUMNS = tuple(f"v{index}" for index in range(1, 29))
 KAGGLE_INSERT_COLUMNS = (
 	"time_seconds",
@@ -75,6 +85,69 @@ MODEL_CANDIDATE_SQL = (
 	f"({', '.join(MODEL_CANDIDATE_COLUMNS)}) "
 	f"VALUES ({', '.join(['?'] * len(MODEL_CANDIDATE_COLUMNS))})"
 )
+RAW_DATASET_UPLOAD_COLUMNS = (
+	"filename",
+	"source_path",
+	"file_size_bytes",
+	"row_count",
+	"column_count",
+	"target_column",
+	"status",
+	"created_at",
+)
+RAW_DATASET_UPLOAD_SQL = (
+	"INSERT INTO raw_dataset_uploads "
+	f"({', '.join(RAW_DATASET_UPLOAD_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(RAW_DATASET_UPLOAD_COLUMNS))})"
+)
+DATASET_PROFILE_COLUMNS = (
+	"upload_id",
+	"row_count",
+	"column_count",
+	"duplicate_row_count",
+	"missing_cell_count",
+	"numeric_column_count",
+	"categorical_column_count",
+	"datetime_column_count",
+	"target_column",
+	"target_cardinality",
+	"class_imbalance_ratio",
+	"warnings_json",
+	"summary_json",
+	"created_at",
+)
+DATASET_PROFILE_SQL = (
+	"INSERT INTO dataset_profiles "
+	f"({', '.join(DATASET_PROFILE_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(DATASET_PROFILE_COLUMNS))})"
+)
+FEATURE_PROFILE_COLUMNS = (
+	"upload_id",
+	"dataset_profile_id",
+	"column_name",
+	"inferred_role",
+	"inferred_dtype",
+	"pandas_dtype",
+	"non_null_count",
+	"missing_count",
+	"missing_ratio",
+	"unique_count",
+	"unique_ratio",
+	"sample_values_json",
+	"min_value",
+	"max_value",
+	"mean_value",
+	"std_value",
+	"simple_description",
+	"technical_description",
+	"target_candidate",
+	"created_at",
+)
+FEATURE_PROFILE_SQL = (
+	"INSERT INTO feature_profiles "
+	f"({', '.join(FEATURE_PROFILE_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(FEATURE_PROFILE_COLUMNS))})"
+)
 
 
 def _ensure_database_directory() -> None:
@@ -131,6 +204,29 @@ def count_kaggle_transactions() -> int:
 		return int(row["row_count"]) if row else 0
 
 
+def get_existing_tables() -> list[str]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT name
+			FROM sqlite_master
+			WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+			ORDER BY name
+			"""
+		)
+		return [str(row["name"]) for row in cursor.fetchall()]
+
+
+def get_table_row_count(table_name: str) -> int:
+	if table_name not in EXPECTED_TABLES:
+		raise ValueError(f"Unsupported table name for count lookup: {table_name}")
+
+	with get_connection() as connection:
+		cursor = connection.execute(f"SELECT COUNT(*) AS row_count FROM {table_name}")
+		row = cursor.fetchone()
+		return int(row["row_count"]) if row else 0
+
+
 def get_kaggle_label_distribution() -> Dict[int, int]:
 	with get_connection() as connection:
 		cursor = connection.execute(
@@ -159,6 +255,74 @@ def insert_model_candidate_metric(metric_data: Dict[str, Any]) -> int:
 	with get_connection() as connection:
 		cursor = connection.execute(MODEL_CANDIDATE_SQL, values)
 		return int(cursor.lastrowid)
+
+
+def insert_raw_dataset_upload(upload_data: Dict[str, Any]) -> int:
+	values = [upload_data[column] for column in RAW_DATASET_UPLOAD_COLUMNS]
+	with get_connection() as connection:
+		cursor = connection.execute(RAW_DATASET_UPLOAD_SQL, values)
+		return int(cursor.lastrowid)
+
+
+def insert_dataset_profile(profile_data: Dict[str, Any]) -> int:
+	values = [profile_data[column] for column in DATASET_PROFILE_COLUMNS]
+	with get_connection() as connection:
+		cursor = connection.execute(DATASET_PROFILE_SQL, values)
+		return int(cursor.lastrowid)
+
+
+def insert_feature_profiles(rows: Sequence[Dict[str, Any]]) -> int:
+	if not rows:
+		return 0
+
+	values = [[row[column] for column in FEATURE_PROFILE_COLUMNS] for row in rows]
+	with get_connection() as connection:
+		connection.executemany(FEATURE_PROFILE_SQL, values)
+	return len(rows)
+
+
+def get_latest_dataset_upload() -> Optional[Dict[str, Any]]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT *
+			FROM raw_dataset_uploads
+			ORDER BY id DESC
+			LIMIT 1
+			"""
+		)
+		row = cursor.fetchone()
+		return dict(row) if row else None
+
+
+def get_dataset_profile_by_upload_id(upload_id: int) -> Optional[Dict[str, Any]]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT *
+			FROM dataset_profiles
+			WHERE upload_id = ?
+			ORDER BY id DESC
+			LIMIT 1
+			""",
+			(upload_id,),
+		)
+		row = cursor.fetchone()
+		return dict(row) if row else None
+
+
+def get_feature_profiles_by_upload_id(upload_id: int) -> list[Dict[str, Any]]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT *
+			FROM feature_profiles
+			WHERE upload_id = ?
+			ORDER BY id
+			""",
+			(upload_id,),
+		)
+		return [dict(row) for row in cursor.fetchall()]
 
 
 def get_or_create_user(name: str, email: str, card_number: str) -> int:

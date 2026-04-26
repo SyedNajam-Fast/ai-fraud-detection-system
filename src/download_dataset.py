@@ -4,11 +4,16 @@ from pathlib import Path
 import shutil
 import sys
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+	sys.path.insert(0, str(PROJECT_ROOT))
+
 import kagglehub
 
+from src.core.config import KAGGLE_CSV_PATH, RAW_DATA_DIR, ensure_project_root_on_path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-RAW_DATA_DIR = PROJECT_ROOT / "data" / "raw" / "creditcardfraud"
+
+ensure_project_root_on_path()
 DATASET_NAME = "mlg-ulb/creditcardfraud"
 CSV_FILENAME = "creditcard.csv"
 
@@ -32,7 +37,7 @@ def download_creditcardfraud_dataset() -> tuple[Path, Path]:
 	source_csv = _find_creditcard_csv(cache_dir)
 
 	RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-	destination_csv = RAW_DATA_DIR / CSV_FILENAME
+	destination_csv = KAGGLE_CSV_PATH
 	shutil.copy2(source_csv, destination_csv)
 
 	return cache_dir, destination_csv

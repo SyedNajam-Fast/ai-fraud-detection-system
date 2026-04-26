@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from pathlib import Path
 import sys
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Dict
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+	sys.path.insert(0, str(PROJECT_ROOT))
 
 import joblib
 import numpy as np
@@ -27,17 +31,17 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from src.core.config import (
+	DATABASE_PATH,
+	FALLBACK_DATASET_PATH,
+	MODEL_METADATA_PATH,
+	MODEL_PATH,
+	MODEL_TRAINING_N_JOBS,
+	ensure_project_root_on_path,
+)
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-MODEL_PATH = PROJECT_ROOT / "model" / "model.pkl"
-MODEL_METADATA_PATH = PROJECT_ROOT / "model" / "model_metadata.json"
-DATA_PATH = PROJECT_ROOT / "data" / "fraud_transactions.csv"
-DATABASE_PATH = PROJECT_ROOT / "data" / "fraud_detection.db"
 
-
-def _ensure_project_root_on_path() -> None:
-	if str(PROJECT_ROOT) not in sys.path:
-		sys.path.insert(0, str(PROJECT_ROOT))
+DATA_PATH = FALLBACK_DATASET_PATH
 
 
 def _generate_synthetic_dataset(sample_size: int = 1500) -> pd.DataFrame:
@@ -223,7 +227,7 @@ def _build_candidate_pipelines() -> Dict[str, Pipeline]:
 						max_depth=12,
 						class_weight="balanced",
 						random_state=42,
-						n_jobs=-1,
+						n_jobs=MODEL_TRAINING_N_JOBS,
 					),
 				),
 			],
@@ -238,7 +242,7 @@ def _build_candidate_pipelines() -> Dict[str, Pipeline]:
 						max_depth=16,
 						class_weight="balanced",
 						random_state=42,
-						n_jobs=-1,
+						n_jobs=MODEL_TRAINING_N_JOBS,
 					),
 				),
 			],
@@ -323,7 +327,7 @@ def _summarize_candidate_result(candidate: Dict[str, object]) -> Dict[str, objec
 
 
 def train_and_save_model() -> Dict[str, object]:
-	_ensure_project_root_on_path()
+	ensure_project_root_on_path()
 	dataset, dataset_source = _load_dataset()
 	features = dataset[["amount", "time", "location", "merchant"]]
 	target = dataset["fraud"]
@@ -493,7 +497,7 @@ def train_and_save_model() -> Dict[str, object]:
 
 
 if __name__ == "__main__":
-	_ensure_project_root_on_path()
+	ensure_project_root_on_path()
 	results = train_and_save_model()
 	print(f"Saved model to {results['model_path']}")
 	print(f"Dataset source: {results['dataset_source']}")
