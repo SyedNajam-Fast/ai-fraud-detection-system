@@ -325,6 +325,33 @@ def get_feature_profiles_by_upload_id(upload_id: int) -> list[Dict[str, Any]]:
 		return [dict(row) for row in cursor.fetchall()]
 
 
+def get_table_columns(table_name: str) -> list[Dict[str, Any]]:
+	if table_name not in EXPECTED_TABLES:
+		raise ValueError(f"Unsupported table name for schema lookup: {table_name}")
+
+	with get_connection() as connection:
+		cursor = connection.execute(f"PRAGMA table_info({table_name})")
+		return [dict(row) for row in cursor.fetchall()]
+
+
+def get_foreign_keys(table_name: str) -> list[Dict[str, Any]]:
+	if table_name not in EXPECTED_TABLES:
+		raise ValueError(f"Unsupported table name for foreign-key lookup: {table_name}")
+
+	with get_connection() as connection:
+		cursor = connection.execute(f"PRAGMA foreign_key_list({table_name})")
+		return [dict(row) for row in cursor.fetchall()]
+
+
+def get_indexes(table_name: str) -> list[Dict[str, Any]]:
+	if table_name not in EXPECTED_TABLES:
+		raise ValueError(f"Unsupported table name for index lookup: {table_name}")
+
+	with get_connection() as connection:
+		cursor = connection.execute(f"PRAGMA index_list({table_name})")
+		return [dict(row) for row in cursor.fetchall()]
+
+
 def get_or_create_user(name: str, email: str, card_number: str) -> int:
 	with get_connection() as connection:
 		cursor = connection.execute("SELECT id FROM users WHERE email = ?", (email,))
