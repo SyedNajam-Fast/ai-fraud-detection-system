@@ -4,3 +4,6 @@ next-phase-implementation-plan.md
 __pycache__/
 *.pyc
 model/*.pkl
+frontend/node_modules/
+frontend/dist/
+frontend/*.log

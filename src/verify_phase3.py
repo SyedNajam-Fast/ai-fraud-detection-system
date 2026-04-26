@@ -55,6 +55,8 @@ def main() -> None:
 
     if not explanation.mermaid_er_diagram.startswith("erDiagram"):
         raise SystemExit("Mermaid ER diagram output is malformed.")
+    if "..." in explanation.mermaid_er_diagram:
+        raise SystemExit("Mermaid ER diagram contains an invalid placeholder token.")
     print_ok("Mermaid ER diagram text was generated.")
 
     if len(explanation.normalization_summary) < 3:

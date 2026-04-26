@@ -229,6 +229,19 @@ def _build_normalization_summary(table_names: list[str]) -> list[str]:
     return summaries
 
 
+def _to_mermaid_attribute_type(sql_type: str) -> str:
+    normalized = sql_type.strip().lower()
+    if "int" in normalized:
+        return "int"
+    if normalized in {"real", "float", "double", "numeric", "decimal"}:
+        return "float"
+    if normalized in {"text", "varchar", "char", "string"}:
+        return "string"
+    if normalized in {"bool", "boolean"}:
+        return "boolean"
+    return "string"
+
+
 def _build_mermaid_er_diagram(table_explanations: list[TableExplanation]) -> str:
     lines = ["erDiagram"]
     seen_relations: set[str] = set()
@@ -245,9 +258,10 @@ def _build_mermaid_er_diagram(table_explanations: list[TableExplanation]) -> str
         lines.append(f"    {table.table_name.upper()} {{")
         for column in table.columns[:8]:
             key_suffix = " PK" if column.is_primary_key else ""
-            lines.append(f"        {column.data_type.lower()} {column.name}{key_suffix}")
+            mermaid_type = _to_mermaid_attribute_type(column.data_type)
+            lines.append(f"        {mermaid_type} {column.name}{key_suffix}")
         if len(table.columns) > 8:
-            lines.append("        string ...")
+            lines.append("        string additional_fields")
         lines.append("    }")
 
     return "\n".join(lines)

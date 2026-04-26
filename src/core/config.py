@@ -10,6 +10,7 @@ DATABASE_DIR = PROJECT_ROOT / "database"
 MODEL_DIR = PROJECT_ROOT / "model"
 RAW_DATA_DIR = DATA_DIR / "raw" / "creditcardfraud"
 SAMPLE_DATA_DIR = DATA_DIR / "samples"
+UPLOADS_DIR = DATA_DIR / "uploads"
 
 DATABASE_PATH = DATA_DIR / "fraud_detection.db"
 SCHEMA_PATH = DATABASE_DIR / "schema.sql"
