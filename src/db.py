@@ -14,6 +14,7 @@ EXPECTED_TABLES = (
 	"fraud_alerts",
 	"kaggle_transactions",
 	"model_candidate_metrics",
+	"model_recommendations",
 	"model_training_runs",
 	"predictions",
 	"raw_dataset_uploads",
@@ -84,6 +85,21 @@ MODEL_CANDIDATE_SQL = (
 	"INSERT INTO model_candidate_metrics "
 	f"({', '.join(MODEL_CANDIDATE_COLUMNS)}) "
 	f"VALUES ({', '.join(['?'] * len(MODEL_CANDIDATE_COLUMNS))})"
+)
+MODEL_RECOMMENDATION_COLUMNS = (
+	"run_id",
+	"model_name",
+	"recommendation_rank",
+	"recommendation_score",
+	"rationale_text",
+	"selected_for_training",
+	"final_winner",
+	"created_at",
+)
+MODEL_RECOMMENDATION_SQL = (
+	"INSERT INTO model_recommendations "
+	f"({', '.join(MODEL_RECOMMENDATION_COLUMNS)}) "
+	f"VALUES ({', '.join(['?'] * len(MODEL_RECOMMENDATION_COLUMNS))})"
 )
 RAW_DATASET_UPLOAD_COLUMNS = (
 	"filename",
@@ -257,6 +273,16 @@ def insert_model_candidate_metric(metric_data: Dict[str, Any]) -> int:
 		return int(cursor.lastrowid)
 
 
+def insert_model_recommendations(rows: Sequence[Dict[str, Any]]) -> int:
+	if not rows:
+		return 0
+
+	values = [[row[column] for column in MODEL_RECOMMENDATION_COLUMNS] for row in rows]
+	with get_connection() as connection:
+		connection.executemany(MODEL_RECOMMENDATION_SQL, values)
+	return len(rows)
+
+
 def insert_raw_dataset_upload(upload_data: Dict[str, Any]) -> int:
 	values = [upload_data[column] for column in RAW_DATASET_UPLOAD_COLUMNS]
 	with get_connection() as connection:
@@ -321,6 +347,34 @@ def get_feature_profiles_by_upload_id(upload_id: int) -> list[Dict[str, Any]]:
 			ORDER BY id
 			""",
 			(upload_id,),
+		)
+		return [dict(row) for row in cursor.fetchall()]
+
+
+def get_latest_model_training_run() -> Optional[Dict[str, Any]]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT *
+			FROM model_training_runs
+			ORDER BY id DESC
+			LIMIT 1
+			"""
+		)
+		row = cursor.fetchone()
+		return dict(row) if row else None
+
+
+def get_model_recommendations_by_run_id(run_id: int) -> list[Dict[str, Any]]:
+	with get_connection() as connection:
+		cursor = connection.execute(
+			"""
+			SELECT *
+			FROM model_recommendations
+			WHERE run_id = ?
+			ORDER BY recommendation_rank, id
+			""",
+			(run_id,),
 		)
 		return [dict(row) for row in cursor.fetchall()]
 

@@ -122,6 +122,20 @@ CREATE TABLE IF NOT EXISTS model_candidate_metrics (
     FOREIGN KEY (run_id) REFERENCES model_training_runs (id) ON DELETE CASCADE
 );
 
+-- Model shortlist generated before training starts.
+CREATE TABLE IF NOT EXISTS model_recommendations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER NOT NULL,
+    model_name TEXT NOT NULL,
+    recommendation_rank INTEGER NOT NULL CHECK (recommendation_rank > 0),
+    recommendation_score REAL NOT NULL,
+    rationale_text TEXT NOT NULL,
+    selected_for_training INTEGER NOT NULL DEFAULT 1 CHECK (selected_for_training IN (0, 1)),
+    final_winner INTEGER NOT NULL DEFAULT 0 CHECK (final_winner IN (0, 1)),
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (run_id) REFERENCES model_training_runs (id) ON DELETE CASCADE
+);
+
 -- Raw dataset registrations for profiling and reporting.
 CREATE TABLE IF NOT EXISTS raw_dataset_uploads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -191,6 +205,8 @@ CREATE INDEX IF NOT EXISTS idx_model_training_runs_dataset_source ON model_train
 CREATE INDEX IF NOT EXISTS idx_model_training_runs_selected_model ON model_training_runs (selected_model_name);
 CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_run_id ON model_candidate_metrics (run_id);
 CREATE INDEX IF NOT EXISTS idx_model_candidate_metrics_selected ON model_candidate_metrics (selected);
+CREATE INDEX IF NOT EXISTS idx_model_recommendations_run_id ON model_recommendations (run_id);
+CREATE INDEX IF NOT EXISTS idx_model_recommendations_rank ON model_recommendations (recommendation_rank);
 CREATE INDEX IF NOT EXISTS idx_raw_dataset_uploads_filename ON raw_dataset_uploads (filename);
 CREATE INDEX IF NOT EXISTS idx_dataset_profiles_upload_id ON dataset_profiles (upload_id);
 CREATE INDEX IF NOT EXISTS idx_feature_profiles_upload_id ON feature_profiles (upload_id);

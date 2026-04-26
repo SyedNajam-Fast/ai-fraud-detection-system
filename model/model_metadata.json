@@ -1,6 +1,7 @@
 {
   "dataset_source": "synthetic:generated",
   "selected_model_name": "logistic_regression",
+  "selected_model_display_name": "Logistic Regression",
   "selection_metric": "validation_average_precision",
   "selected_threshold": 0.6762725380991143,
   "sample_count": 1500,
@@ -13,6 +14,7 @@
     "recall": 0.6810344827586207,
     "f1": 0.5047923322683706,
     "average_precision": 0.5463046300042786,
+    "roc_auc": 0.8712944229415904,
     "confusion_matrix": [
       [
         666,
@@ -30,6 +32,7 @@
     "recall": 0.8421052631578947,
     "f1": 0.6336633663366337,
     "average_precision": 0.7172523789376343,
+    "roc_auc": 0.9303937324226597,
     "confusion_matrix": [
       [
         231,
@@ -47,6 +50,7 @@
     "recall": 0.631578947368421,
     "f1": 0.48484848484848486,
     "average_precision": 0.4146553927805579,
+    "roc_auc": 0.8492366412213741,
     "confusion_matrix": [
       [
         225,
@@ -60,10 +64,128 @@
   },
   "overfit_flag": false,
   "underfit_flag": false,
-  "created_at": "2026-04-26T15:59:36+00:00",
+  "created_at": "2026-04-26T16:10:35+00:00",
+  "shortlisted_models": [
+    {
+      "model_name": "logistic_regression",
+      "display_name": "Logistic Regression",
+      "score": 31.0,
+      "shortlist_rank": 1,
+      "rationale": "It provides a strong interpretable baseline for fraud classification. The dataset is small enough for a reliable linear baseline. A linear model remains a good benchmark after one-hot encoding. The target distribution is imbalanced, so robust probability ranking matters."
+    },
+    {
+      "model_name": "random_forest",
+      "display_name": "Random Forest",
+      "score": 28.0,
+      "shortlist_rank": 2,
+      "rationale": "It handles mixed feature interactions well in tabular fraud data. Categorical feature interactions often favor tree ensembles. The encoded feature space is rich enough to justify tree ensembles. The target distribution is imbalanced, so robust probability ranking matters."
+    },
+    {
+      "model_name": "extra_trees",
+      "display_name": "Extra Trees",
+      "score": 27.0,
+      "shortlist_rank": 3,
+      "rationale": "It is useful for non-linear tabular patterns and fast ensemble comparisons. Categorical feature interactions often favor randomized tree ensembles. The encoded feature space suggests non-linear interactions worth testing. The target distribution is imbalanced, so robust probability ranking matters."
+    }
+  ],
+  "recommendation_strategy": "Rule-based shortlist using dataset size, imbalance, feature mix, missingness, and encoded feature estimate.",
+  "dataset_characteristics": {
+    "dataset_source": "synthetic:generated",
+    "sample_count": 1500,
+    "numeric_feature_count": 2,
+    "categorical_feature_count": 2,
+    "missing_ratio": 0.0,
+    "encoded_feature_estimate": 12,
+    "fraud_rate": 0.128,
+    "majority_class_ratio": 0.872,
+    "class_imbalance_detected": true
+  },
+  "full_model_pool": [
+    {
+      "model_name": "logistic_regression",
+      "display_name": "Logistic Regression",
+      "score": 31.0,
+      "shortlisted": true,
+      "shortlist_rank": 1,
+      "rationale": "It provides a strong interpretable baseline for fraud classification. The dataset is small enough for a reliable linear baseline. A linear model remains a good benchmark after one-hot encoding. The target distribution is imbalanced, so robust probability ranking matters."
+    },
+    {
+      "model_name": "random_forest",
+      "display_name": "Random Forest",
+      "score": 28.0,
+      "shortlisted": true,
+      "shortlist_rank": 2,
+      "rationale": "It handles mixed feature interactions well in tabular fraud data. Categorical feature interactions often favor tree ensembles. The encoded feature space is rich enough to justify tree ensembles. The target distribution is imbalanced, so robust probability ranking matters."
+    },
+    {
+      "model_name": "extra_trees",
+      "display_name": "Extra Trees",
+      "score": 27.0,
+      "shortlisted": true,
+      "shortlist_rank": 3,
+      "rationale": "It is useful for non-linear tabular patterns and fast ensemble comparisons. Categorical feature interactions often favor randomized tree ensembles. The encoded feature space suggests non-linear interactions worth testing. The target distribution is imbalanced, so robust probability ranking matters."
+    },
+    {
+      "model_name": "hist_gradient_boosting",
+      "display_name": "HistGradientBoosting",
+      "score": 21.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "Boosting can benefit from mixed numeric and encoded categorical features. A richer feature space can reward gradient-based tree boosting. The target distribution is imbalanced, so robust probability ranking matters. The dataset has enough numeric signal for gradient-based tree methods."
+    },
+    {
+      "model_name": "gradient_boosting",
+      "display_name": "Gradient Boosting",
+      "score": 16.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "Boosting can capture category-driven non-linear behavior after encoding. The target distribution is imbalanced, so robust probability ranking matters. Numeric signal makes boosting a reasonable candidate."
+    },
+    {
+      "model_name": "svm",
+      "display_name": "Support Vector Machine",
+      "score": 11.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "The dataset is small enough for an SVM to be computationally realistic."
+    },
+    {
+      "model_name": "knn",
+      "display_name": "K-Nearest Neighbors",
+      "score": 9.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "The dataset is small enough for distance-based comparison to remain practical."
+    },
+    {
+      "model_name": "decision_tree",
+      "display_name": "Decision Tree",
+      "score": 8.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "A small dataset benefits from an easy-to-explain tree baseline."
+    },
+    {
+      "model_name": "naive_bayes",
+      "display_name": "Naive Bayes",
+      "score": 6.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "A fast probabilistic baseline is practical on a small dataset."
+    },
+    {
+      "model_name": "adaboost",
+      "display_name": "AdaBoost",
+      "score": 5.0,
+      "shortlisted": false,
+      "shortlist_rank": null,
+      "rationale": "Boosting can still be useful when the fraud class is rarer than the normal class."
+    }
+  ],
   "candidates": [
     {
       "model_name": "logistic_regression",
+      "display_name": "Logistic Regression",
       "selected_threshold": 0.6762725380991143,
       "threshold_f1": 0.6336633663366337,
       "train_metrics": {
@@ -72,6 +194,7 @@
         "recall": 0.6810344827586207,
         "f1": 0.5047923322683706,
         "average_precision": 0.5463046300042786,
+        "roc_auc": 0.8712944229415904,
         "confusion_matrix": [
           [
             666,
@@ -89,6 +212,7 @@
         "recall": 0.8421052631578947,
         "f1": 0.6336633663366337,
         "average_precision": 0.7172523789376343,
+        "roc_auc": 0.9303937324226597,
         "confusion_matrix": [
           [
             231,
@@ -106,6 +230,7 @@
     },
     {
       "model_name": "random_forest",
+      "display_name": "Random Forest",
       "selected_threshold": 0.4583333333333333,
       "threshold_f1": 0.619718309859155,
       "train_metrics": {
@@ -114,6 +239,7 @@
         "recall": 1.0,
         "f1": 0.9957081545064378,
         "average_precision": 0.9999999999999998,
+        "roc_auc": 1.0,
         "confusion_matrix": [
           [
             783,
@@ -131,6 +257,7 @@
         "recall": 0.5789473684210527,
         "f1": 0.6197183098591549,
         "average_precision": 0.6800418420386639,
+        "roc_auc": 0.9150261149055845,
         "confusion_matrix": [
           [
             251,
@@ -148,6 +275,7 @@
     },
     {
       "model_name": "extra_trees",
+      "display_name": "Extra Trees",
       "selected_threshold": 0.17592175593127862,
       "threshold_f1": 0.5510204081632654,
       "train_metrics": {
@@ -156,6 +284,7 @@
         "recall": 1.0,
         "f1": 1.0,
         "average_precision": 1.0,
+        "roc_auc": 1.0,
         "confusion_matrix": [
           [
             784,
@@ -173,6 +302,7 @@
         "recall": 0.7105263157894737,
         "f1": 0.5510204081632653,
         "average_precision": 0.5588392644260949,
+        "roc_auc": 0.8693250301325833,
         "confusion_matrix": [
           [
             229,

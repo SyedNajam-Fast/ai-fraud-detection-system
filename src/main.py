@@ -62,6 +62,12 @@ def _print_training_summary(model_metrics: dict[str, object] | None) -> None:
 		if metadata:
 			print_info(f"Selected model: {metadata.get('selected_model_name', 'unknown')}")
 			print_info(f"Decision threshold: {float(metadata.get('selected_threshold', 0.5)):.2f}")
+			shortlisted_models = metadata.get("shortlisted_models", [])
+			if shortlisted_models:
+				print_info(
+					"Shortlisted models: "
+					+ ", ".join(str(item.get("model_name", "unknown")) for item in shortlisted_models)
+				)
 		return
 
 	print_section("Training Summary")
@@ -70,13 +76,26 @@ def _print_training_summary(model_metrics: dict[str, object] | None) -> None:
 	print_info(f"Selected model: {model_metrics['selected_model_name']}")
 	print_info(f"Selection metric: {model_metrics['selection_metric']}")
 	print_info(f"Decision threshold: {model_metrics['selected_threshold']:.2f}")
+	print_info(f"Recommendation strategy: {model_metrics['recommendation_strategy']}")
+	print_info(
+		"Shortlisted models: "
+		+ ", ".join(str(item["model_name"]) for item in model_metrics["shortlisted_models"])
+	)
 	print_info(f"Validation F1: {model_metrics['validation_metrics']['f1']:.4f}")
+	print_info(f"Validation PR AUC: {model_metrics['validation_metrics']['average_precision']:.4f}")
+	print_info(f"Validation ROC AUC: {model_metrics['validation_metrics']['roc_auc']:.4f}")
 	print_info(f"Test F1: {model_metrics['test_metrics']['f1']:.4f}")
+	print_info(f"Test PR AUC: {model_metrics['test_metrics']['average_precision']:.4f}")
+	print_info(f"Test ROC AUC: {model_metrics['test_metrics']['roc_auc']:.4f}")
 	print_info(f"Overfit check: {'flagged' if model_metrics['overfit_flag'] else 'passed'}")
 	print_info(f"Underfit check: {'flagged' if model_metrics['underfit_flag'] else 'passed'}")
 	print_info(f"Accuracy: {model_metrics['accuracy']:.4f}")
 	print("Confusion matrix:")
 	print(model_metrics["confusion_matrix"])
+	for item in model_metrics["shortlisted_models"]:
+		print_info(
+			f"Reason for {item['model_name']}: {item['rationale']}"
+		)
 
 
 def _print_workflow_summary(result) -> None:

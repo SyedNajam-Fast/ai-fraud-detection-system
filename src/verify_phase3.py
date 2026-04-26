@@ -38,6 +38,7 @@ def main() -> None:
         ("dataset_profiles", "raw_dataset_uploads"),
         ("feature_profiles", "raw_dataset_uploads"),
         ("feature_profiles", "dataset_profiles"),
+        ("model_recommendations", "model_training_runs"),
         ("model_candidate_metrics", "model_training_runs"),
     }
 

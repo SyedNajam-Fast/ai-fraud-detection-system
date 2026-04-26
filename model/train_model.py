@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 import sys
 from datetime import UTC, datetime
-from typing import Dict
+from typing import Any, Dict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,7 +15,13 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import ExtraTreesClassifier, RandomForestClassifier
+from sklearn.ensemble import (
+	AdaBoostClassifier,
+	ExtraTreesClassifier,
+	GradientBoostingClassifier,
+	HistGradientBoostingClassifier,
+	RandomForestClassifier,
+)
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -26,10 +32,15 @@ from sklearn.metrics import (
 	precision_recall_curve,
 	precision_score,
 	recall_score,
+	roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.svm import SVC
+from sklearn.tree import DecisionTreeClassifier
 
 from src.core.config import (
 	DATABASE_PATH,
@@ -38,6 +49,10 @@ from src.core.config import (
 	MODEL_PATH,
 	MODEL_TRAINING_N_JOBS,
 	ensure_project_root_on_path,
+)
+from src.services.model_recommendation import (
+	MODEL_DISPLAY_NAMES,
+	build_model_recommendation_summary,
 )
 
 
@@ -140,7 +155,7 @@ def _load_dataset_from_database() -> pd.DataFrame | None:
 	return _map_kaggle_to_project_schema(kaggle_dataset)
 
 
-def _load_dataset() -> tuple[pd.DataFrame, str]:
+def load_training_dataset() -> tuple[pd.DataFrame, str]:
 	database_dataset = _load_dataset_from_database()
 	if database_dataset is not None:
 		return database_dataset, "database:kaggle_transactions"
@@ -185,69 +200,83 @@ def _build_preprocessor() -> ColumnTransformer:
 	)
 
 
-def _build_pipeline() -> Pipeline:
+def _build_classifier(model_name: str):
+	if model_name == "logistic_regression":
+		return LogisticRegression(
+			max_iter=2000,
+			class_weight="balanced",
+			solver="liblinear",
+			random_state=42,
+		)
+	if model_name == "decision_tree":
+		return DecisionTreeClassifier(
+			max_depth=8,
+			min_samples_leaf=5,
+			class_weight="balanced",
+			random_state=42,
+		)
+	if model_name == "random_forest":
+		return RandomForestClassifier(
+			n_estimators=120,
+			max_depth=12,
+			class_weight="balanced",
+			random_state=42,
+			n_jobs=MODEL_TRAINING_N_JOBS,
+		)
+	if model_name == "extra_trees":
+		return ExtraTreesClassifier(
+			n_estimators=180,
+			max_depth=16,
+			class_weight="balanced",
+			random_state=42,
+			n_jobs=MODEL_TRAINING_N_JOBS,
+		)
+	if model_name == "gradient_boosting":
+		return GradientBoostingClassifier(
+			n_estimators=120,
+			learning_rate=0.08,
+			max_depth=3,
+			random_state=42,
+		)
+	if model_name == "hist_gradient_boosting":
+		return HistGradientBoostingClassifier(
+			max_depth=8,
+			learning_rate=0.08,
+			max_iter=180,
+			random_state=42,
+		)
+	if model_name == "adaboost":
+		return AdaBoostClassifier(
+			n_estimators=140,
+			learning_rate=0.7,
+			random_state=42,
+		)
+	if model_name == "svm":
+		return SVC(
+			C=1.0,
+			kernel="rbf",
+			gamma="scale",
+			class_weight="balanced",
+			probability=True,
+			random_state=42,
+		)
+	if model_name == "knn":
+		return KNeighborsClassifier(
+			n_neighbors=9,
+			weights="distance",
+		)
+	if model_name == "naive_bayes":
+		return GaussianNB()
+	raise ValueError(f"Unsupported model name: {model_name}")
+
+
+def _build_pipeline(model_name: str) -> Pipeline:
 	return Pipeline(
 		steps=[
 			("preprocessor", _build_preprocessor()),
-			(
-				"classifier",
-				RandomForestClassifier(
-					n_estimators=200,
-					random_state=42,
-					class_weight="balanced",
-				),
-			),
+			("classifier", _build_classifier(model_name)),
 		]
 	)
-
-
-def _build_candidate_pipelines() -> Dict[str, Pipeline]:
-	return {
-		"logistic_regression": Pipeline(
-			steps=[
-				("preprocessor", _build_preprocessor()),
-				(
-					"classifier",
-					LogisticRegression(
-						max_iter=2000,
-						class_weight="balanced",
-						solver="liblinear",
-						random_state=42,
-					),
-				),
-			],
-		),
-		"random_forest": Pipeline(
-			steps=[
-				("preprocessor", _build_preprocessor()),
-				(
-					"classifier",
-					RandomForestClassifier(
-						n_estimators=120,
-						max_depth=12,
-						class_weight="balanced",
-						random_state=42,
-						n_jobs=MODEL_TRAINING_N_JOBS,
-					),
-				),
-			],
-		),
-		"extra_trees": Pipeline(
-			steps=[
-				("preprocessor", _build_preprocessor()),
-				(
-					"classifier",
-					ExtraTreesClassifier(
-						n_estimators=180,
-						max_depth=16,
-						class_weight="balanced",
-						random_state=42,
-						n_jobs=MODEL_TRAINING_N_JOBS,
-					),
-				),
-			],
-		),
-	}
 
 
 def _threshold_from_probabilities(target: pd.Series, probabilities: np.ndarray) -> tuple[float, float]:
@@ -270,6 +299,7 @@ def _classification_metrics(target: pd.Series, probabilities: np.ndarray, thresh
 		"recall": float(recall_score(target, predictions, zero_division=0)),
 		"f1": float(f1_score(target, predictions, zero_division=0)),
 		"average_precision": float(average_precision_score(target, probabilities)),
+		"roc_auc": float(roc_auc_score(target, probabilities)),
 		"confusion_matrix": confusion_matrix(target, predictions).tolist(),
 	}
 
@@ -300,6 +330,7 @@ def _fit_and_score_candidate(
 
 	return {
 		"model_name": model_name,
+		"display_name": MODEL_DISPLAY_NAMES[model_name],
 		"pipeline": pipeline,
 		"selected_threshold": selected_threshold,
 		"threshold_f1": threshold_f1,
@@ -316,6 +347,7 @@ def _summarize_candidate_result(candidate: Dict[str, object]) -> Dict[str, objec
 	validation_metrics = candidate["validation_metrics"]
 	return {
 		"model_name": candidate["model_name"],
+		"display_name": candidate["display_name"],
 		"selected_threshold": float(candidate["selected_threshold"]),
 		"threshold_f1": float(candidate["threshold_f1"]),
 		"train_metrics": train_metrics,
@@ -326,15 +358,29 @@ def _summarize_candidate_result(candidate: Dict[str, object]) -> Dict[str, objec
 	}
 
 
+def recommend_models_for_current_dataset() -> Dict[str, Any]:
+	dataset, dataset_source = load_training_dataset()
+	features = dataset[["amount", "time", "location", "merchant"]]
+	target = dataset["fraud"]
+	recommendation_summary = build_model_recommendation_summary(features, target, dataset_source)
+	return {
+		"dataset_source": dataset_source,
+		"recommendation_summary": recommendation_summary,
+	}
+
+
 def train_and_save_model() -> Dict[str, object]:
 	ensure_project_root_on_path()
-	dataset, dataset_source = _load_dataset()
+	dataset, dataset_source = load_training_dataset()
 	features = dataset[["amount", "time", "location", "merchant"]]
 	target = dataset["fraud"]
 	started_at = datetime.now(UTC).isoformat(timespec="seconds")
 
 	if target.nunique() < 2:
 		raise ValueError("Training dataset must include both fraud and non-fraud labels.")
+
+	recommendation_summary = build_model_recommendation_summary(features, target, dataset_source)
+	shortlisted_model_names = [item.model_name for item in recommendation_summary.shortlisted_models]
 
 	x_train_full, x_test, y_train_full, y_test = train_test_split(
 		features,
@@ -352,11 +398,11 @@ def train_and_save_model() -> Dict[str, object]:
 	)
 
 	candidate_results = []
-	for model_name, pipeline in _build_candidate_pipelines().items():
+	for model_name in shortlisted_model_names:
 		candidate_results.append(
 			_fit_and_score_candidate(
 				model_name=model_name,
-				pipeline=pipeline,
+				pipeline=_build_pipeline(model_name),
 				x_train=x_train,
 				y_train=y_train,
 				x_validation=x_validation,
@@ -377,7 +423,7 @@ def train_and_save_model() -> Dict[str, object]:
 	selected_threshold = float(selected_candidate["selected_threshold"])
 	selection_metric = "validation_average_precision"
 
-	final_pipeline = _build_candidate_pipelines()[selected_model_name]
+	final_pipeline = _build_pipeline(selected_model_name)
 	final_features = pd.concat([x_train, x_validation], axis=0)
 	final_target = pd.concat([y_train, y_validation], axis=0)
 	final_pipeline.fit(final_features, final_target)
@@ -392,9 +438,10 @@ def train_and_save_model() -> Dict[str, object]:
 	finished_at = datetime.now(UTC).isoformat(timespec="seconds")
 	status = "completed"
 	notes = (
-		"Selected by validation_average_precision; "
-		f"train_f1={selected_train_metrics['f1']:.4f}, "
-		f"val_f1={selected_validation_metrics['f1']:.4f}, "
+		"Selected by validation_average_precision after rule-based shortlist; "
+		f"shortlisted={', '.join(shortlisted_model_names)}; "
+		f"winner={selected_model_name}; "
+		f"val_f1={selected_validation_metrics['f1']:.4f}; "
 		f"test_f1={test_metrics['f1']:.4f}"
 	)
 
@@ -404,6 +451,7 @@ def train_and_save_model() -> Dict[str, object]:
 	metadata = {
 		"dataset_source": dataset_source,
 		"selected_model_name": selected_model_name,
+		"selected_model_display_name": MODEL_DISPLAY_NAMES[selected_model_name],
 		"selection_metric": selection_metric,
 		"selected_threshold": selected_threshold,
 		"sample_count": int(len(dataset)),
@@ -416,12 +464,39 @@ def train_and_save_model() -> Dict[str, object]:
 		"overfit_flag": bool(overfit_flag),
 		"underfit_flag": bool(underfit_flag),
 		"created_at": finished_at,
+		"shortlisted_models": [
+			{
+				"model_name": item.model_name,
+				"display_name": item.display_name,
+				"score": item.score,
+				"shortlist_rank": item.shortlist_rank,
+				"rationale": item.rationale,
+			}
+			for item in recommendation_summary.shortlisted_models
+		],
+		"recommendation_strategy": recommendation_summary.recommendation_strategy,
+		"dataset_characteristics": recommendation_summary.dataset_characteristics,
+		"full_model_pool": [
+			{
+				"model_name": item.model_name,
+				"display_name": item.display_name,
+				"score": item.score,
+				"shortlisted": item.shortlisted,
+				"shortlist_rank": item.shortlist_rank,
+				"rationale": item.rationale,
+			}
+			for item in recommendation_summary.all_models
+		],
 		"candidates": [_summarize_candidate_result(candidate) for candidate in candidate_results],
 	}
 	MODEL_METADATA_PATH.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
 
 	try:
-		from src.db import insert_model_candidate_metric, insert_model_training_run
+		from src.db import (
+			insert_model_candidate_metric,
+			insert_model_recommendations,
+			insert_model_training_run,
+		)
 
 		run_id = insert_model_training_run(
 			{
@@ -445,6 +520,22 @@ def train_and_save_model() -> Dict[str, object]:
 				"finished_at": finished_at,
 				"notes": notes,
 			},
+		)
+
+		insert_model_recommendations(
+			[
+				{
+					"run_id": run_id,
+					"model_name": item.model_name,
+					"recommendation_rank": int(item.shortlist_rank or 0),
+					"recommendation_score": float(item.score),
+					"rationale_text": item.rationale,
+					"selected_for_training": 1,
+					"final_winner": 1 if item.model_name == selected_model_name else 0,
+					"created_at": finished_at,
+				}
+				for item in recommendation_summary.shortlisted_models
+			]
 		)
 
 		for candidate in candidate_results:
@@ -473,7 +564,6 @@ def train_and_save_model() -> Dict[str, object]:
 				},
 			)
 	except Exception:
-		# Database logging should not block the core model artifact workflow.
 		pass
 
 	return {
@@ -483,6 +573,7 @@ def train_and_save_model() -> Dict[str, object]:
 		"dataset_source": dataset_source,
 		"sample_count": int(len(dataset)),
 		"selected_model_name": selected_model_name,
+		"selected_model_display_name": MODEL_DISPLAY_NAMES[selected_model_name],
 		"selected_threshold": selected_threshold,
 		"selection_metric": selection_metric,
 		"train_metrics": selected_train_metrics,
@@ -490,6 +581,10 @@ def train_and_save_model() -> Dict[str, object]:
 		"test_metrics": test_metrics,
 		"overfit_flag": bool(overfit_flag),
 		"underfit_flag": bool(underfit_flag),
+		"shortlisted_models": metadata["shortlisted_models"],
+		"recommendation_strategy": recommendation_summary.recommendation_strategy,
+		"dataset_characteristics": recommendation_summary.dataset_characteristics,
+		"full_model_pool": metadata["full_model_pool"],
 		"candidates": [_summarize_candidate_result(candidate) for candidate in candidate_results],
 		"training_run_started_at": started_at,
 		"training_run_finished_at": finished_at,
@@ -505,10 +600,13 @@ if __name__ == "__main__":
 	print(f"Selection metric: {results['selection_metric']}")
 	print(f"Decision threshold: {results['selected_threshold']:.2f}")
 	print(f"Samples used: {results['sample_count']}")
+	print(f"Shortlisted models: {[item['model_name'] for item in results['shortlisted_models']]}")
 	print(f"Overfit check: {'flagged' if results['overfit_flag'] else 'passed'}")
 	print(f"Underfit check: {'flagged' if results['underfit_flag'] else 'passed'}")
 	print(f"Accuracy: {results['accuracy']:.4f}")
 	print(f"Validation F1: {results['validation_metrics']['f1']:.4f}")
+	print(f"Validation PR AUC: {results['validation_metrics']['average_precision']:.4f}")
+	print(f"Validation ROC AUC: {results['validation_metrics']['roc_auc']:.4f}")
 	print(f"Test F1: {results['test_metrics']['f1']:.4f}")
 	print("Confusion matrix:")
 	print(results["confusion_matrix"])

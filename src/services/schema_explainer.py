@@ -15,6 +15,7 @@ TABLE_LAYER = {
     "dataset_profiles": "analytics",
     "feature_profiles": "analytics",
     "model_training_runs": "analytics",
+    "model_recommendations": "analytics",
     "model_candidate_metrics": "analytics",
 }
 
@@ -28,6 +29,7 @@ TABLE_PURPOSE = {
     "dataset_profiles": "Stores dataset-level profiling summaries such as missing values, duplicates, and class imbalance.",
     "feature_profiles": "Stores column-level profiling details and plain-language explanations for every dataset field.",
     "model_training_runs": "Stores one summary row for each model training session and selected winner.",
+    "model_recommendations": "Stores the three shortlisted models, their recommendation rank, and the reason they were chosen.",
     "model_candidate_metrics": "Stores evaluation details for every candidate model considered in a training run.",
 }
 
@@ -41,6 +43,7 @@ NORMALIZATION_NOTES = {
     "dataset_profiles": "Dataset-level metrics are separated from file registration and column details to avoid mixing summary data with row-level feature explanations.",
     "feature_profiles": "Each feature explanation is stored in its own row, which avoids repeating dataset-level summary information for every column.",
     "model_training_runs": "Training-run summary data is separated from candidate-level metrics so the chosen winner and the compared models do not duplicate each other.",
+    "model_recommendations": "Shortlisted models are stored separately from both training-run summary data and candidate metrics so recommendation logic is traceable.",
     "model_candidate_metrics": "Candidate metrics depend on a parent training run and are stored separately to preserve one-to-many comparison history.",
 }
 
@@ -208,6 +211,7 @@ def _build_normalization_summary(table_names: list[str]) -> list[str]:
     summaries = [
         "The schema separates operational transactions from predictions and alerts, which avoids storing model output inside the base transaction row.",
         "The schema separates training-run summaries from candidate-level metrics, which preserves one-to-many model comparison history without duplication.",
+        "The schema also stores recommendation rows separately so model selection reasoning is preserved before final winner evaluation.",
         "The profiling layer separates raw uploaded-file metadata, dataset-level summaries, and feature-level explanations into different tables.",
     ]
 

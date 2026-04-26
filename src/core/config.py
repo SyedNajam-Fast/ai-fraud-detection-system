@@ -22,6 +22,7 @@ REQUIREMENTS_PATH = PROJECT_ROOT / "requirements.txt"
 
 REQUIRED_PACKAGES = ["pandas", "numpy", "sklearn", "joblib", "kagglehub"]
 MODEL_TRAINING_N_JOBS = 1
+MODEL_SHORTLIST_SIZE = 3
 
 
 def ensure_project_root_on_path() -> None:
