@@ -1,106 +1,256 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   AlertTriangle,
   Brain,
   CheckCircle2,
-  Copy,
   Database,
-  Download,
-  FileUp,
   Gauge,
   GraduationCap,
-  LayoutDashboard,
   Play,
   RefreshCw,
   Rows3,
   WandSparkles
 } from "lucide-react";
-import MermaidDiagram from "./components/MermaidDiagram";
 
 const API_BASE = "http://127.0.0.1:8000/api";
 
-const tabs = [
-  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "data", label: "Data Understanding", icon: Rows3 },
-  { id: "schema", label: "Database Design", icon: Database },
-  { id: "ai", label: "Model Recommendation", icon: Brain },
-  { id: "workflow", label: "Training & Workflow", icon: Activity },
-  { id: "presentation", label: "Diagrams & Viva", icon: GraduationCap }
+const sectionTabs = [
+  {
+    id: "ai",
+    label: "AI",
+    subtitle: "Dataset, model choice, training, and live prediction",
+    icon: Brain
+  },
+  {
+    id: "db",
+    label: "DB",
+    subtitle: "Database section reserved for your next prompt",
+    icon: Database
+  },
+  {
+    id: "sda",
+    label: "SDA",
+    subtitle: "SDA section reserved for your next prompt",
+    icon: GraduationCap
+  }
 ];
 
-const quickStats = [
-  ["users", "Users"],
-  ["transactions", "Transactions"],
-  ["predictions", "Predictions"],
-  ["fraud_alerts", "Fraud Alerts"],
-  ["raw_dataset_uploads", "Profiled Datasets"],
-  ["model_training_runs", "Training Runs"]
+const aiSteps = [
+  { number: "01", title: "Understand the dataset", icon: Rows3 },
+  { number: "02", title: "Justify the model choice", icon: Brain },
+  { number: "03", title: "Train and evaluate", icon: Activity },
+  { number: "04", title: "Try manual input", icon: Play },
+  { number: "05", title: "Test on unseen data", icon: Gauge }
 ];
 
-function formatPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(value)) {
+const defaultManualInput = {
+  amount: 12450.75,
+  time: 23,
+  location: "Lahore",
+  merchant: "electronics_store"
+};
+const API_RETRY_DELAY_MS = 5000;
+const MAX_API_RETRIES = 12;
+
+function formatPercent(value, digits = 1) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "N/A";
   }
-  return `${(Number(value) * 100).toFixed(1)}%`;
+  return `${(Number(value) * 100).toFixed(digits)}%`;
 }
 
-function formatValue(value) {
-  if (value === null || value === undefined || value === "") {
+function formatScore(value, digits = 3) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return "N/A";
   }
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  }
-  return String(value);
+  return Number(value).toFixed(digits);
 }
 
-function modeText(mode, simple, technical = simple) {
-  return mode === "simple" ? simple : technical;
+function formatCount(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "N/A";
+  }
+  return Number(value).toLocaleString();
 }
 
-function formatReadiness(status) {
-  if (status === "ready") {
-    return "Ready";
+function titleCase(value) {
+  if (!value) {
+    return "N/A";
   }
-  if (status === "attention") {
-    return "Needs Attention";
-  }
-  return formatValue(status);
+  return String(value)
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function downloadTextFile(filename, content, mimeType) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
+function formatSource(value) {
+  if (!value) {
+    return "Not available";
+  }
+  const [kind, name] = String(value).split(":");
+  if (!name) {
+    return titleCase(value);
+  }
+  return `${titleCase(kind)} / ${titleCase(name)}`;
+}
+
+function statusText(flag) {
+  if (flag === null || flag === undefined) {
+    return "N/A";
+  }
+  return flag ? "Flagged" : "Passed";
+}
+
+function buildSelectedModelStory(metadata, shortlist) {
+  if (!metadata?.selected_model_name) {
+    return "The shortlist is ready. Train the models to show which option performs best on validation and test data.";
+  }
+
+  const winningShortlistItem =
+    shortlist.find((item) => item.model_name === metadata.selected_model_name) || shortlist[0] || null;
+
+  if (winningShortlistItem?.rationale) {
+    return winningShortlistItem.rationale;
+  }
+
+  return "The selected model gave the strongest validation performance among the shortlisted options.";
+}
+
+function SectionTab({ icon: Icon, label, subtitle, active, onClick }) {
+  return (
+    <button className={`section-tab ${active ? "active" : ""}`} onClick={onClick}>
+      <div className="section-tab-icon">
+        <Icon size={18} />
+      </div>
+      <div>
+        <strong>{label}</strong>
+        <span>{subtitle}</span>
+      </div>
+    </button>
+  );
+}
+
+function HeroMetric({ label, value }) {
+  return (
+    <article className="hero-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function StorySection({ step, title, icon: Icon, intro, children }) {
+  return (
+    <section className="story-section">
+      <div className="story-heading">
+        <div className="story-step-tag">
+          <span>{step}</span>
+          <Icon size={18} />
+        </div>
+        <div>
+          <h2>{title}</h2>
+          <p>{intro}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MetricCard({ label, value, tone = "neutral" }) {
+  return (
+    <article className={`metric-card ${tone}`}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function ConfusionMatrix({ matrix }) {
+  const safeMatrix =
+    Array.isArray(matrix) &&
+    matrix.length === 2 &&
+    Array.isArray(matrix[0]) &&
+    Array.isArray(matrix[1]) &&
+    matrix[0].length === 2 &&
+    matrix[1].length === 2
+      ? matrix
+      : null;
+
+  return (
+    <div className="matrix-card">
+      <div className="matrix-copy">
+        <strong>Evaluation Matrix</strong>
+        <p>
+          This is the held-out test confusion matrix. It shows how many normal and fraud cases were
+          classified correctly and incorrectly.
+        </p>
+      </div>
+      {safeMatrix ? (
+        <div className="matrix-grid">
+          <div className="matrix-axis blank" />
+          <div className="matrix-axis">Predicted Normal</div>
+          <div className="matrix-axis">Predicted Fraud</div>
+          <div className="matrix-axis">Actual Normal</div>
+          <div className="matrix-cell success">{safeMatrix[0][0]}</div>
+          <div className="matrix-cell warning">{safeMatrix[0][1]}</div>
+          <div className="matrix-axis">Actual Fraud</div>
+          <div className="matrix-cell warning">{safeMatrix[1][0]}</div>
+          <div className="matrix-cell success">{safeMatrix[1][1]}</div>
+        </div>
+      ) : (
+        <p className="empty-copy">Train the model to populate the confusion matrix.</p>
+      )}
+    </div>
+  );
+}
+
+function PlaceholderSection({ icon: Icon, title, description, cards }) {
+  return (
+    <main className="placeholder-shell">
+      <section className="placeholder-hero">
+        <div className="placeholder-icon">
+          <Icon size={24} />
+        </div>
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
+        </div>
+      </section>
+
+      <section className="placeholder-grid">
+        {cards.map((card) => (
+          <article key={card.title} className="placeholder-card">
+            <strong>{card.title}</strong>
+            <p>{card.text}</p>
+          </article>
+        ))}
+      </section>
+    </main>
+  );
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState("dashboard");
-  const [mode, setMode] = useState("simple");
-  const [dashboard, setDashboard] = useState(null);
-  const [datasetOptions, setDatasetOptions] = useState([]);
-  const [latestProfile, setLatestProfile] = useState(null);
-  const [schemaData, setSchemaData] = useState(null);
-  const [presentationData, setPresentationData] = useState(null);
-  const [modelData, setModelData] = useState(null);
+  const [activeSection, setActiveSection] = useState("ai");
+  const [datasetPreview, setDatasetPreview] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
+  const [modelData, setModelData] = useState(null);
   const [trainingResult, setTrainingResult] = useState(null);
-  const [workflowResult, setWorkflowResult] = useState(null);
-  const [selectedDiagramId, setSelectedDiagramId] = useState("");
-  const [presentationExportStatus, setPresentationExportStatus] = useState("");
+  const [manualInput, setManualInput] = useState(defaultManualInput);
+  const [manualResult, setManualResult] = useState(null);
+  const [testSample, setTestSample] = useState(null);
+  const [testSampleIndex, setTestSampleIndex] = useState(0);
   const [error, setError] = useState("");
   const [loadingKey, setLoadingKey] = useState("");
-  const [selectedPath, setSelectedPath] = useState("");
-  const [targetColumn, setTargetColumn] = useState("");
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [connectionNote, setConnectionNote] = useState("");
+  const retryTimeoutRef = useRef(null);
+  const retryAttemptRef = useRef(0);
 
   useEffect(() => {
-    void loadInitial();
+    void loadAiView();
+    return () => {
+      clearRetryTimer();
+    };
   }, []);
 
   async function apiFetch(path, options = {}) {
@@ -112,178 +262,86 @@ function App() {
     return payload;
   }
 
-  async function loadInitial() {
-    try {
-      setLoadingKey("initial");
-      const [dashboardPayload, datasetsPayload, modelPayload] = await Promise.all([
-        apiFetch("/dashboard"),
-        apiFetch("/datasets/options"),
-        apiFetch("/model/latest")
-      ]);
-      setDashboard(dashboardPayload);
-      setDatasetOptions(datasetsPayload.datasets || []);
-      setLatestProfile(dashboardPayload.latest_profile || null);
-      setModelData(modelPayload);
-
-      const defaultDataset = (datasetsPayload.datasets || []).find((item) => item.available);
-      if (defaultDataset) {
-        setSelectedPath(defaultDataset.path);
-        setTargetColumn(defaultDataset.defaultTargetColumn || "");
-      }
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingKey("");
+  function clearRetryTimer() {
+    if (retryTimeoutRef.current) {
+      window.clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
     }
   }
 
-  async function loadSchema() {
-    try {
-      setLoadingKey("schema");
-      const payload = await apiFetch("/schema");
-      setSchemaData(payload.schema);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingKey("");
-    }
-  }
-
-  async function loadPresentation() {
-    try {
-      setLoadingKey("presentation");
-      const payload = await apiFetch("/presentation");
-      setPresentationData(payload.presentation);
-      const firstDiagram = payload.presentation?.diagrams?.[0];
-      if (firstDiagram) {
-        setSelectedDiagramId((currentValue) => currentValue || firstDiagram.id);
-      }
-      return payload.presentation;
-    } catch (requestError) {
-      setError(requestError.message);
-      return null;
-    } finally {
-      setLoadingKey("");
-    }
-  }
-
-  async function loadRecommendation() {
-    try {
-      setLoadingKey("recommendation");
-      const payload = await apiFetch("/recommendations/current");
-      setRecommendation(payload);
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingKey("");
-    }
-  }
-
-  async function refreshModel() {
-    const modelPayload = await apiFetch("/model/latest");
-    setModelData(modelPayload);
-  }
-
-  async function refreshPresentation() {
-    const payload = await apiFetch("/presentation");
-    setPresentationData(payload.presentation);
-    const firstDiagram = payload.presentation?.diagrams?.[0];
-    if (firstDiagram) {
-      setSelectedDiagramId((currentValue) => currentValue || firstDiagram.id);
-    }
-    return payload.presentation;
-  }
-
-  async function handleCopyMarkdownReport() {
-    try {
-      const freshPresentation =
-        presentationData?.markdown_report ? presentationData : await loadPresentation();
-      const reportText = freshPresentation?.markdown_report || "";
-      if (!reportText) {
-        throw new Error("Presentation report is not available yet.");
-      }
-      await navigator.clipboard.writeText(reportText);
-      setPresentationExportStatus("Markdown report copied.");
-    } catch (copyError) {
-      setError(copyError.message);
-    }
-  }
-
-  async function handleDownloadPresentationExport(exportFormat) {
-    try {
-      setLoadingKey(`presentation-${exportFormat}`);
-      setError("");
-      const payload = await apiFetch(`/presentation/export?format=${exportFormat}`);
-      const exported = payload.export;
-      downloadTextFile(exported.filename, exported.content, exported.content_type);
-      setPresentationExportStatus(`${exported.filename} downloaded.`);
-    } catch (downloadError) {
-      setError(downloadError.message);
-    } finally {
-      setLoadingKey("");
-    }
-  }
-
-  async function handleCopyMermaidSource(chart) {
-    try {
-      await navigator.clipboard.writeText(chart);
-      setPresentationExportStatus("Mermaid source copied.");
-    } catch (copyError) {
-      setError(copyError.message);
-    }
-  }
-
-  async function handleProfilePath() {
-    try {
-      setLoadingKey("profile-path");
-      setError("");
-      const payload = await apiFetch("/profile/path", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          csv_path: selectedPath,
-          target_column: targetColumn || null
-        })
-      });
-      setLatestProfile(payload.profile);
-      setDashboard(payload.dashboard);
-      await refreshPresentation();
-      setActiveTab("data");
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setLoadingKey("");
-    }
-  }
-
-  async function handleUploadProfile() {
-    if (!selectedFile) {
-      setError("Choose a CSV file before uploading.");
+  function scheduleRetry() {
+    if (retryAttemptRef.current >= MAX_API_RETRIES || retryTimeoutRef.current) {
       return;
     }
 
+    retryAttemptRef.current += 1;
+    setConnectionNote(
+      `Backend is starting on ${API_BASE}. Retrying automatically in ${API_RETRY_DELAY_MS / 1000} seconds (${retryAttemptRef.current}/${MAX_API_RETRIES}).`
+    );
+    retryTimeoutRef.current = window.setTimeout(() => {
+      retryTimeoutRef.current = null;
+      void loadAiView(true);
+    }, API_RETRY_DELAY_MS);
+  }
+
+  async function loadAiView(isRetry = false) {
+    const requestSpecs = [
+      { key: "datasetPreview", label: "dataset preview", path: "/ai/dataset-preview" },
+      { key: "recommendation", label: "model recommendation", path: "/recommendations/current" },
+      { key: "modelData", label: "saved model state", path: "/model/latest" }
+    ];
+
     try {
-      setLoadingKey("profile-upload");
+      setLoadingKey(isRetry ? "retrying-api-connection" : "loading-ai-story");
       setError("");
-      const formData = new FormData();
-      formData.append("file", selectedFile);
-      if (targetColumn) {
-        formData.append("target_column", targetColumn);
-      }
-      const response = await fetch(`${API_BASE}/profile/upload`, {
-        method: "POST",
-        body: formData
+
+      const results = await Promise.allSettled(requestSpecs.map((item) => apiFetch(item.path)));
+      const failedLabels = [];
+      let successCount = 0;
+
+      results.forEach((result, index) => {
+        const spec = requestSpecs[index];
+        if (result.status === "fulfilled") {
+          successCount += 1;
+          if (spec.key === "datasetPreview") {
+            setDatasetPreview(result.value);
+            const defaults = result.value?.manual_input_options?.defaults;
+            if (defaults) {
+              setManualInput(defaults);
+            }
+          }
+          if (spec.key === "recommendation") {
+            setRecommendation(result.value);
+          }
+          if (spec.key === "modelData") {
+            setModelData(result.value);
+          }
+          return;
+        }
+
+        failedLabels.push(spec.label);
       });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(payload.detail || "Upload failed.");
+
+      if (successCount > 0) {
+        clearRetryTimer();
+        retryAttemptRef.current = 0;
+        setConnectionNote("");
       }
-      setLatestProfile(payload.profile);
-      setDashboard(payload.dashboard);
-      await refreshPresentation();
-      setActiveTab("data");
+
+      if (failedLabels.length === requestSpecs.length) {
+        setError(`Backend is not ready yet at ${API_BASE}.`);
+        scheduleRetry();
+        return;
+      }
+
+      if (failedLabels.length > 0) {
+        setError(`Some AI sections are still loading: ${failedLabels.join(", ")}.`);
+      } else {
+        setError("");
+      }
     } catch (requestError) {
-      setError(requestError.message);
+      setError(requestError.message || `Backend is not ready yet at ${API_BASE}.`);
+      scheduleRetry();
     } finally {
       setLoadingKey("");
     }
@@ -291,14 +349,17 @@ function App() {
 
   async function handleTrain() {
     try {
-      setLoadingKey("train");
+      setLoadingKey("training-model");
       setError("");
       const payload = await apiFetch("/train", { method: "POST" });
       setTrainingResult(payload.training);
-      setDashboard(payload.dashboard);
-      await refreshModel();
-      await refreshPresentation();
-      setActiveTab("workflow");
+
+      const [recommendationPayload, modelPayload] = await Promise.all([
+        apiFetch("/recommendations/current"),
+        apiFetch("/model/latest")
+      ]);
+      setRecommendation(recommendationPayload);
+      setModelData(modelPayload);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -306,19 +367,21 @@ function App() {
     }
   }
 
-  async function handleWorkflow(forceTrain = false) {
+  async function handleManualPredict() {
     try {
-      setLoadingKey(forceTrain ? "workflow-force" : "workflow");
+      setLoadingKey("manual-prediction");
       setError("");
-      const payload = await apiFetch("/workflow/run", {
+      const payload = await apiFetch("/predict/manual", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force_train: forceTrain })
+        body: JSON.stringify({
+          amount: Number(manualInput.amount),
+          time: Number(manualInput.time),
+          location: manualInput.location,
+          merchant: manualInput.merchant
+        })
       });
-      setWorkflowResult(payload.workflow);
-      setDashboard(payload.dashboard);
-      await refreshModel();
-      await refreshPresentation();
+      setManualResult(payload);
     } catch (requestError) {
       setError(requestError.message);
     } finally {
@@ -326,392 +389,269 @@ function App() {
     }
   }
 
-  const counts = dashboard?.counts || {};
-  const latestMetadata = modelData?.metadata || {};
-  const latestRecommendations = modelData?.recommendations || [];
-  const diagrams = presentationData?.diagrams || [];
-  const activeDiagram =
-    diagrams.find((diagram) => diagram.id === selectedDiagramId) || diagrams[0] || null;
+  async function handlePredictTestSample() {
+    try {
+      setLoadingKey("held-out-test-sample");
+      setError("");
+      const payload = await apiFetch(`/predict/test-sample?index=${testSampleIndex}`);
+      setTestSample(payload);
+      setTestSampleIndex(payload.next_index || 0);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setLoadingKey("");
+    }
+  }
+
+  const metadata = modelData?.metadata || {};
+  const shortlist =
+    recommendation?.recommendation_summary?.shortlisted_models ||
+    metadata.shortlisted_models ||
+    [];
+  const fullModelPool =
+    recommendation?.recommendation_summary?.all_models ||
+    metadata.full_model_pool ||
+    [];
+  const datasetSignals =
+    recommendation?.recommendation_summary?.dataset_characteristics ||
+    metadata.dataset_characteristics ||
+    {};
+  const metricsSource = trainingResult || metadata || {};
+  const validationMetrics = metricsSource.validation_metrics || {};
+  const testMetrics = metricsSource.test_metrics || {};
+  const selectedModelName = metricsSource.selected_model_name || metadata.selected_model_name || "";
+  const selectedModel =
+    metricsSource.selected_model_display_name ||
+    metadata.selected_model_display_name ||
+    (selectedModelName ? titleCase(selectedModelName) : "Not trained yet");
+  const hasTrainedModel = Boolean(metadata.selected_model_name || trainingResult?.selected_model_name);
+  const selectedModelStory = buildSelectedModelStory(metadata, shortlist);
+  const locationOptions = datasetPreview?.manual_input_options?.location_options || [manualInput.location];
+  const merchantOptions = datasetPreview?.manual_input_options?.merchant_options || [manualInput.merchant];
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand-block">
-          <div className="eyebrow">Semester Project Control Room</div>
-          <h1>Fraud Detection, Data Understanding, Database Design, and Viva Dashboard</h1>
+    <div className="presentation-shell">
+      <div className="ambient-shape ambient-one" />
+      <div className="ambient-shape ambient-two" />
+
+      <header className="hero-panel">
+        <div className="hero-copy">
+          <div className="hero-eyebrow">Evaluation Day Presentation UI</div>
+          <h1>AI Fraud Detection System</h1>
           <p>
-            One local interface for profiling datasets, explaining the schema, recommending models, training the
-            shortlist, running the fraud workflow, and presenting diagrams plus viva notes.
+            A simplified, explainable interface built for presentation: show the dataset, justify the
+            model, train it, give manual inputs, and finally test it on unseen data in real time.
           </p>
         </div>
-        <div className="topbar-actions">
-          <div className="mode-toggle" role="tablist" aria-label="Explanation mode">
-            <button className={mode === "simple" ? "active" : ""} onClick={() => setMode("simple")}>
-              Simple Mode
-            </button>
-            <button className={mode === "technical" ? "active" : ""} onClick={() => setMode("technical")}>
-              Technical Mode
-            </button>
-          </div>
-          <button className="refresh-button" onClick={() => void loadInitial()}>
+
+        <div className="section-tab-row" aria-label="Main presentation sections">
+          {sectionTabs.map((tab) => (
+            <SectionTab
+              key={tab.id}
+              icon={tab.icon}
+              label={tab.label}
+              subtitle={tab.subtitle}
+              active={activeSection === tab.id}
+              onClick={() => setActiveSection(tab.id)}
+            />
+          ))}
+        </div>
+
+        <div className="hero-action-row">
+          <button className="ghost-button" onClick={() => void loadAiView()}>
             <RefreshCw size={16} />
-            Refresh
+            Reload AI Data
           </button>
+          <span className="hero-action-note">
+            If the backend is still starting, this page now retries automatically.
+          </span>
+        </div>
+
+        <div className="hero-metric-row">
+          <HeroMetric label="Dataset rows" value={formatCount(datasetPreview?.sample_count)} />
+          <HeroMetric label="Fraud rate" value={formatPercent(datasetPreview?.fraud_rate)} />
+          <HeroMetric label="Selected model" value={selectedModel} />
+          <HeroMetric label="Test accuracy" value={formatPercent(testMetrics?.accuracy)} />
         </div>
       </header>
 
-      {error ? <div className="status-banner error">{error}</div> : null}
-      {loadingKey ? <div className="status-banner info">Running: {loadingKey}</div> : null}
-      {presentationExportStatus ? <div className="status-banner success">{presentationExportStatus}</div> : null}
+      {error ? (
+        <div className="status-banner error">
+          <AlertTriangle size={16} />
+          <span>{error}</span>
+        </div>
+      ) : null}
 
-      <section className="stats-grid">
-        {quickStats.map(([key, label]) => (
-          <article key={key} className="stat-card">
-            <span>{label}</span>
-            <strong>{counts[key] ?? 0}</strong>
-          </article>
-        ))}
-      </section>
+      {connectionNote ? (
+        <div className="status-banner info">
+          <RefreshCw size={16} />
+          <span>{connectionNote}</span>
+        </div>
+      ) : null}
 
-      <nav className="tab-strip" aria-label="Main sections">
-        {tabs.map((tab) => {
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.id}
-              className={activeTab === tab.id ? "active" : ""}
-              onClick={() => {
-                setActiveTab(tab.id);
-                if (tab.id === "schema" && !schemaData) {
-                  void loadSchema();
-                }
-                if (tab.id === "ai" && !recommendation) {
-                  void loadRecommendation();
-                }
-                if (tab.id === "presentation" && !presentationData) {
-                  void loadPresentation();
-                }
-              }}
-            >
-              <Icon size={16} />
-              <span>{tab.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+      {loadingKey ? (
+        <div className="status-banner info">
+          <RefreshCw size={16} />
+          <span>{loadingKey}</span>
+        </div>
+      ) : null}
 
-      <main className="content-band">
-        {activeTab === "dashboard" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <Gauge size={18} />
-                <h2>Latest Model State</h2>
-              </div>
-              <p className="panel-copy">
-                {modeText(
-                  mode,
-                  "This area shows the currently saved model and the shortlist used to choose it.",
-                  "This area mirrors the latest saved model metadata and shortlist persistence."
-                )}
-              </p>
-              <dl className="detail-list">
-                <div><dt>Selected model</dt><dd>{latestMetadata.selected_model_name || "N/A"}</dd></div>
-                <div><dt>Threshold</dt><dd>{formatValue(latestMetadata.selected_threshold)}</dd></div>
-                <div><dt>Dataset source</dt><dd>{latestMetadata.dataset_source || "N/A"}</dd></div>
-                <div><dt>Selection metric</dt><dd>{latestMetadata.selection_metric || "N/A"}</dd></div>
-              </dl>
-              <div className="pill-row">
-                {(latestMetadata.shortlisted_models || []).map((item) => (
-                  <span key={item.model_name} className="pill accent">{item.model_name}</span>
-                ))}
-              </div>
-            </article>
-
-            <article className="panel">
-              <div className="panel-header">
-                <FileUp size={18} />
-                <h2>Latest Profile Snapshot</h2>
-              </div>
-              <p className="panel-copy">
-                {modeText(
-                  mode,
-                  "This summarizes the last dataset the system inspected.",
-                  "This summarizes the latest raw dataset upload and profile rows."
-                )}
-              </p>
-              {latestProfile ? (
-                <dl className="detail-list">
-                  <div><dt>Filename</dt><dd>{latestProfile.upload?.filename}</dd></div>
-                  <div><dt>Rows</dt><dd>{formatValue(latestProfile.dataset_profile?.row_count)}</dd></div>
-                  <div><dt>Columns</dt><dd>{formatValue(latestProfile.dataset_profile?.column_count)}</dd></div>
-                  <div><dt>Target column</dt><dd>{latestProfile.dataset_profile?.target_column || "N/A"}</dd></div>
-                </dl>
-              ) : (
-                <p className="empty-state">No dataset has been profiled yet.</p>
-              )}
-            </article>
-
-            <article className="panel wide">
-              <div className="panel-header">
-                <WandSparkles size={18} />
-                <h2>Quick Actions</h2>
-              </div>
-              <div className="action-row">
-                <button className="primary-button" onClick={() => void handleProfilePath()}>
-                  <FileUp size={16} />
-                  Profile Selected Dataset
-                </button>
-                <button className="primary-button muted" onClick={() => void loadRecommendation()}>
-                  <Brain size={16} />
-                  Recommend Models
-                </button>
-                <button className="primary-button muted" onClick={() => void handleTrain()}>
-                  <Brain size={16} />
-                  Train Shortlist
-                </button>
-                <button className="primary-button muted" onClick={() => void handleWorkflow(false)}>
-                  <Play size={16} />
-                  Run Workflow
-                </button>
-              </div>
-            </article>
+      {activeSection === "ai" ? (
+        <main className="ai-stage">
+          <section className="flow-strip">
+            {aiSteps.map((step) => {
+              const Icon = step.icon;
+              return (
+                <article key={step.number} className="flow-step">
+                  <span>{step.number}</span>
+                  <strong>{step.title}</strong>
+                  <Icon size={18} />
+                </article>
+              );
+            })}
           </section>
-        ) : null}
 
-        {activeTab === "data" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <FileUp size={18} />
-                <h2>Profile a Dataset</h2>
-              </div>
-              <label className="field">
-                <span>Local dataset path</span>
-                <select value={selectedPath} onChange={(event) => setSelectedPath(event.target.value)}>
-                  <option value="">Choose a known dataset path</option>
-                  {datasetOptions.map((item) => (
-                    <option key={item.path} value={item.path} disabled={!item.available}>
-                      {item.label} {item.available ? "" : "(missing locally)"}
-                    </option>
+          <StorySection
+            step="Step 1"
+            title="Understand the Dataset"
+            icon={Rows3}
+            intro="Start the demo by showing what the model sees: the feature columns, a few sample rows, and the class balance."
+          >
+            <div className="story-grid two-column">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Rows3 size={18} />
+                  <h3>Dataset Snapshot</h3>
+                </div>
+                <div className="metric-strip">
+                  <MetricCard label="Source" value={formatSource(datasetPreview?.dataset_source)} tone="accent" />
+                  <MetricCard label="Rows" value={formatCount(datasetPreview?.sample_count)} />
+                  <MetricCard label="Normal class" value={formatPercent(datasetPreview?.normal_rate)} />
+                  <MetricCard label="Fraud class" value={formatPercent(datasetPreview?.fraud_rate)} tone="warm" />
+                </div>
+                <div className="explain-box">
+                  <strong>Simple explanation</strong>
+                  <p>
+                    Before training, we inspect the structure of the data and the fraud ratio so we know
+                    whether the problem is balanced or imbalanced.
+                  </p>
+                </div>
+              </article>
+
+              <article className="surface-card">
+                <div className="card-heading">
+                  <WandSparkles size={18} />
+                  <h3>Feature Meaning</h3>
+                </div>
+                <div className="feature-grid">
+                  {(datasetPreview?.feature_cards || []).map((feature) => (
+                    <article key={feature.name} className="feature-card">
+                      <span className={`feature-kind ${feature.kind}`}>{feature.kind}</span>
+                      <strong>{feature.name}</strong>
+                      <p>{feature.description}</p>
+                    </article>
                   ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Target column override</span>
-                <input value={targetColumn} onChange={(event) => setTargetColumn(event.target.value)} placeholder="Class" />
-              </label>
-              <div className="action-row">
-                <button className="primary-button" onClick={() => void handleProfilePath()}>
-                  <Rows3 size={16} />
-                  Profile from Path
-                </button>
-              </div>
-              <label className="field">
-                <span>Upload CSV file</span>
-                <input type="file" accept=".csv" onChange={(event) => setSelectedFile(event.target.files?.[0] || null)} />
-              </label>
-              <div className="action-row">
-                <button className="primary-button muted" onClick={() => void handleUploadProfile()}>
-                  <FileUp size={16} />
-                  Upload and Profile
-                </button>
-              </div>
-            </article>
+                </div>
+              </article>
+            </div>
 
-            <article className="panel">
-              <div className="panel-header">
+            <article className="surface-card">
+              <div className="card-heading">
                 <Rows3 size={18} />
-                <h2>Latest Profile Summary</h2>
-              </div>
-              {latestProfile ? (
-                <>
-                  <dl className="detail-list">
-                    <div><dt>File</dt><dd>{latestProfile.upload?.filename}</dd></div>
-                    <div><dt>Rows</dt><dd>{latestProfile.dataset_profile?.row_count}</dd></div>
-                    <div><dt>Columns</dt><dd>{latestProfile.dataset_profile?.column_count}</dd></div>
-                    <div><dt>Duplicates</dt><dd>{latestProfile.dataset_profile?.duplicate_row_count}</dd></div>
-                    <div><dt>Missing cells</dt><dd>{latestProfile.dataset_profile?.missing_cell_count}</dd></div>
-                    <div><dt>Target column</dt><dd>{latestProfile.dataset_profile?.target_column || "N/A"}</dd></div>
-                    <div><dt>Imbalance ratio</dt><dd>{formatPercent(latestProfile.dataset_profile?.class_imbalance_ratio)}</dd></div>
-                  </dl>
-                  <div className="warning-list">
-                    {JSON.parse(latestProfile.dataset_profile?.warnings_json || "[]").map((warning) => (
-                      <span key={warning} className="warning-pill">{warning}</span>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="empty-state">Profile a dataset to populate this summary.</p>
-              )}
-            </article>
-
-            <article className="panel wide">
-              <div className="panel-header">
-                <Rows3 size={18} />
-                <h2>Column Explanations</h2>
+                <h3>Sample Rows</h3>
               </div>
               <div className="table-shell">
                 <table>
                   <thead>
                     <tr>
-                      <th>Column</th>
-                      <th>Role</th>
-                      <th>Type</th>
-                      <th>Description</th>
+                      <th>Amount</th>
+                      <th>Time</th>
+                      <th>Location</th>
+                      <th>Merchant</th>
+                      <th>Fraud</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(latestProfile?.feature_profiles || []).map((feature) => (
-                      <tr key={feature.id}>
-                        <td>{feature.column_name}</td>
-                        <td>{feature.inferred_role}</td>
-                        <td>{feature.inferred_dtype}</td>
-                        <td>{mode === "simple" ? feature.simple_description : feature.technical_description}</td>
+                    {(datasetPreview?.sample_rows || []).map((row, index) => (
+                      <tr key={`${row.location}-${row.merchant}-${index}`}>
+                        <td>{row.amount}</td>
+                        <td>{row.time}</td>
+                        <td>{row.location}</td>
+                        <td>{row.merchant}</td>
+                        <td>{row.fraud}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             </article>
-          </section>
-        ) : null}
+          </StorySection>
 
-        {activeTab === "schema" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <Database size={18} />
-                <h2>Schema Overview</h2>
-              </div>
-              {schemaData ? (
-                <>
-                  <p className="panel-copy">{mode === "simple" ? schemaData.simple_overview : schemaData.technical_overview}</p>
-                  <div className="bullet-list">
-                    {schemaData.layer_summaries.map((item) => <div key={item}>{item}</div>)}
+          <StorySection
+            step="Step 2"
+            title="Why This Model Was Chosen"
+            icon={Brain}
+            intro="The system first recommends a shortlist, then selects the best-performing model after training and validation."
+          >
+            <div className="story-grid two-column">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Brain size={18} />
+                  <h3>Dataset Signals Used for Recommendation</h3>
+                </div>
+                <div className="metric-strip">
+                  <MetricCard label="Samples" value={formatCount(datasetSignals.sample_count)} />
+                  <MetricCard label="Numeric features" value={formatCount(datasetSignals.numeric_feature_count)} />
+                  <MetricCard label="Categorical features" value={formatCount(datasetSignals.categorical_feature_count)} />
+                  <MetricCard label="Fraud rate" value={formatPercent(datasetSignals.fraud_rate)} tone="warm" />
+                  <MetricCard
+                    label="Imbalance detected"
+                    value={datasetSignals.class_imbalance_detected ? "Yes" : "No"}
+                    tone="accent"
+                  />
+                  <MetricCard label="Encoded features" value={formatCount(datasetSignals.encoded_feature_estimate)} />
+                </div>
+              </article>
+
+              <article className="surface-card spotlight-card">
+                <div className="card-heading">
+                  <CheckCircle2 size={18} />
+                  <h3>Selected Model</h3>
+                </div>
+                <div className="spotlight-copy">
+                  <span className="spotlight-label">Winner</span>
+                  <strong>{selectedModel}</strong>
+                  <p>{selectedModelStory}</p>
+                </div>
+                <div className="mini-metrics">
+                  <div>
+                    <span>Validation F1</span>
+                    <strong>{formatScore(validationMetrics.f1)}</strong>
                   </div>
-                  <div className="bullet-list">
-                    {schemaData.normalization_summary.map((item) => <div key={item}>{item}</div>)}
+                  <div>
+                    <span>Test F1</span>
+                    <strong>{formatScore(testMetrics.f1)}</strong>
                   </div>
-                </>
-              ) : (
-                <button className="primary-button" onClick={() => void loadSchema()}>
-                  <Database size={16} />
-                  Load Schema Explanation
-                </button>
-              )}
-            </article>
-
-            <article className="panel">
-              <div className="panel-header">
-                <Database size={18} />
-                <h2>ER Diagram</h2>
-              </div>
-              {schemaData ? (
-                <MermaidDiagram chart={schemaData.mermaid_er_diagram} title="ER Diagram" />
-              ) : (
-                <p className="empty-state">Schema data not loaded yet.</p>
-              )}
-            </article>
-
-            <article className="panel wide">
-              <div className="panel-header">
-                <Database size={18} />
-                <h2>Table-by-Table Explanation</h2>
-              </div>
-              <div className="table-shell">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Table</th>
-                      <th>Layer</th>
-                      <th>Primary Key</th>
-                      <th>Purpose</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(schemaData?.tables || []).map((table) => (
-                      <tr key={table.table_name}>
-                        <td>{table.table_name}</td>
-                        <td>{table.layer}</td>
-                        <td>{table.primary_key_columns.join(", ")}</td>
-                        <td>{mode === "simple" ? table.purpose : table.normalization_note}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </article>
-          </section>
-        ) : null}
-
-        {activeTab === "ai" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <Brain size={18} />
-                <h2>Current Recommendation</h2>
-              </div>
-              {recommendation ? (
-                <>
-                  <dl className="detail-list">
-                    {Object.entries(recommendation.recommendation_summary.dataset_characteristics || {}).map(([key, value]) => (
-                      <div key={key}>
-                        <dt>{key}</dt>
-                        <dd>{typeof value === "number" && key.includes("ratio") ? formatPercent(value) : formatValue(value)}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <div className="model-list">
-                    {recommendation.recommendation_summary.shortlisted_models.map((item) => (
-                      <article key={item.model_name} className="model-card">
-                        <header>
-                          <strong>{item.model_name}</strong>
-                          <span>Rank {item.shortlist_rank}</span>
-                        </header>
-                        <p>{item.rationale}</p>
-                      </article>
-                    ))}
+                  <div>
+                    <span>Overfit check</span>
+                    <strong>{statusText(metricsSource.overfit_flag)}</strong>
                   </div>
-                </>
-              ) : (
-                <button className="primary-button" onClick={() => void loadRecommendation()}>
-                  <Brain size={16} />
-                  Load Recommendation
-                </button>
-              )}
-            </article>
+                </div>
+              </article>
+            </div>
 
-            <article className="panel">
-              <div className="panel-header">
-                <Gauge size={18} />
-                <h2>Latest Trained Model</h2>
-              </div>
-              <dl className="detail-list">
-                <div><dt>Selected model</dt><dd>{latestMetadata.selected_model_name || "N/A"}</dd></div>
-                <div><dt>Validation F1</dt><dd>{formatValue(latestMetadata.validation_metrics?.f1)}</dd></div>
-                <div><dt>Validation PR AUC</dt><dd>{formatValue(latestMetadata.validation_metrics?.average_precision)}</dd></div>
-                <div><dt>Validation ROC AUC</dt><dd>{formatValue(latestMetadata.validation_metrics?.roc_auc)}</dd></div>
-                <div><dt>Test F1</dt><dd>{formatValue(latestMetadata.test_metrics?.f1)}</dd></div>
-              </dl>
-              <div className="model-list">
-                {latestRecommendations.map((item) => (
-                  <article key={item.id} className={`model-card ${item.final_winner ? "winner" : ""}`}>
-                    <header>
-                      <strong>{item.model_name}</strong>
-                      <span>Rank {item.recommendation_rank}</span>
-                    </header>
-                    <p>{mode === "simple" ? item.rationale_text : `Score ${item.recommendation_score}: ${item.rationale_text}`}</p>
-                  </article>
-                ))}
-              </div>
-            </article>
+            <div className="shortlist-grid">
+              {shortlist.map((item) => (
+                <article key={item.model_name} className="shortlist-card">
+                  <div className="shortlist-rank">Rank {item.shortlist_rank || "-"}</div>
+                  <strong>{item.display_name || titleCase(item.model_name)}</strong>
+                  <p>{item.rationale}</p>
+                </article>
+              ))}
+            </div>
 
-            <article className="panel wide">
-              <div className="panel-header">
-                <Brain size={18} />
-                <h2>Full Model Pool</h2>
-              </div>
+            <details className="details-card">
+              <summary>Show full model scoring table</summary>
               <div className="table-shell">
                 <table>
                   <thead>
@@ -723,10 +663,10 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(recommendation?.recommendation_summary.all_models || []).map((item) => (
+                    {fullModelPool.map((item) => (
                       <tr key={item.model_name}>
-                        <td>{item.model_name}</td>
-                        <td>{formatValue(item.score)}</td>
+                        <td>{item.display_name || titleCase(item.model_name)}</td>
+                        <td>{formatScore(item.score, 1)}</td>
                         <td>{item.shortlisted ? `Shortlisted (${item.shortlist_rank})` : "Not shortlisted"}</td>
                         <td>{item.rationale}</td>
                       </tr>
@@ -734,256 +674,317 @@ function App() {
                   </tbody>
                 </table>
               </div>
-            </article>
-          </section>
-        ) : null}
+            </details>
+          </StorySection>
 
-        {activeTab === "workflow" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <Play size={18} />
-                <h2>Execute Training and Workflow</h2>
-              </div>
-              <p className="panel-copy">
-                {modeText(
-                  mode,
-                  "Use these actions during your demo to show recommendation, training, and live fraud prediction from the same interface.",
-                  "These actions invoke the backend training and orchestration services through FastAPI."
-                )}
-              </p>
-              <div className="action-row">
-                <button className="primary-button" onClick={() => void handleTrain()}>
-                  <Brain size={16} />
-                  Train Shortlist
-                </button>
-                <button className="primary-button muted" onClick={() => void handleWorkflow(false)}>
-                  <Play size={16} />
-                  Run Workflow
-                </button>
-                <button className="primary-button muted" onClick={() => void handleWorkflow(true)}>
-                  <RefreshCw size={16} />
-                  Retrain and Run
-                </button>
-              </div>
-            </article>
-
-            <article className="panel">
-              <div className="panel-header">
-                <Activity size={18} />
-                <h2>Latest Workflow Result</h2>
-              </div>
-              {workflowResult ? (
-                <dl className="detail-list">
-                  <div><dt>Transaction ID</dt><dd>{workflowResult.transaction_id}</dd></div>
-                  <div><dt>Prediction</dt><dd>{workflowResult.prediction}</dd></div>
-                  <div><dt>Probability</dt><dd>{formatValue(workflowResult.probability)}</dd></div>
-                  <div><dt>Alert ID</dt><dd>{workflowResult.alert_id ?? "No alert"}</dd></div>
-                </dl>
-              ) : (
-                <p className="empty-state">Run the workflow to see the live transaction result here.</p>
-              )}
-            </article>
-
-            <article className="panel wide">
-              <div className="panel-header">
-                <Brain size={18} />
-                <h2>Latest Training Result</h2>
-              </div>
-              {trainingResult ? (
-                <div className="table-shell">
-                  <table>
-                    <thead>
-                      <tr><th>Item</th><th>Value</th></tr>
-                    </thead>
-                    <tbody>
-                      <tr><td>Selected model</td><td>{trainingResult.selected_model_name}</td></tr>
-                      <tr><td>Threshold</td><td>{formatValue(trainingResult.selected_threshold)}</td></tr>
-                      <tr><td>Validation F1</td><td>{formatValue(trainingResult.validation_metrics?.f1)}</td></tr>
-                      <tr><td>Validation PR AUC</td><td>{formatValue(trainingResult.validation_metrics?.average_precision)}</td></tr>
-                      <tr><td>Validation ROC AUC</td><td>{formatValue(trainingResult.validation_metrics?.roc_auc)}</td></tr>
-                      <tr><td>Test F1</td><td>{formatValue(trainingResult.test_metrics?.f1)}</td></tr>
-                      <tr><td>Overfit check</td><td>{trainingResult.overfit_flag ? "Flagged" : "Passed"}</td></tr>
-                      <tr><td>Underfit check</td><td>{trainingResult.underfit_flag ? "Flagged" : "Passed"}</td></tr>
-                    </tbody>
-                  </table>
+          <StorySection
+            step="Step 3"
+            title="Train and Evaluate the Model"
+            icon={Activity}
+            intro="This step shows the actual performance after training, including the decision threshold, metrics, and confusion matrix."
+          >
+            <div className="story-grid two-column">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Activity size={18} />
+                  <h3>Training Action</h3>
                 </div>
-              ) : (
-                <p className="empty-state">Train the shortlist to inspect the latest model metrics here.</p>
-              )}
-            </article>
-          </section>
-        ) : null}
+                <p className="support-copy">
+                  Use this during the demo if you want to retrain in front of the examiner and immediately
+                  update the saved model metrics.
+                </p>
+                <div className="action-row">
+                  <button className="primary-button" onClick={() => void handleTrain()}>
+                    <Play size={16} />
+                    {hasTrainedModel ? "Retrain Model" : "Train Model"}
+                  </button>
+                  <button className="secondary-button" onClick={() => void loadAiView()}>
+                    <RefreshCw size={16} />
+                    Refresh View
+                  </button>
+                </div>
+              </article>
 
-        {activeTab === "presentation" ? (
-          <section className="panel-grid two-column">
-            <article className="panel">
-              <div className="panel-header">
-                <GraduationCap size={18} />
-                <h2>Demo Readiness</h2>
-              </div>
-              {presentationData ? (
-                <>
-                  <div className={`readiness-overview ${presentationData.demo_readiness.overall_status}`}>
-                    {presentationData.demo_readiness.overall_status === "ready" ? (
-                      <CheckCircle2 size={18} />
-                    ) : (
-                      <AlertTriangle size={18} />
-                    )}
-                    <div>
-                      <strong>{formatReadiness(presentationData.demo_readiness.overall_status)}</strong>
-                      <p>{presentationData.demo_readiness.summary}</p>
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Gauge size={18} />
+                  <h3>Evaluation Metrics</h3>
+                </div>
+                <div className="metric-strip">
+                  <MetricCard label="Validation F1" value={formatScore(validationMetrics.f1)} />
+                  <MetricCard label="Test Accuracy" value={formatPercent(testMetrics.accuracy)} tone="accent" />
+                  <MetricCard label="Test F1" value={formatScore(testMetrics.f1)} />
+                  <MetricCard label="PR AUC" value={formatScore(testMetrics.average_precision)} />
+                  <MetricCard label="ROC AUC" value={formatScore(testMetrics.roc_auc)} />
+                  <MetricCard label="Threshold" value={formatScore(metricsSource.selected_threshold)} tone="warm" />
+                </div>
+                <div className="explain-box">
+                  <strong>Simple explanation</strong>
+                  <p>
+                    We judge the model using test accuracy, F1 score, PR AUC, ROC AUC, and the confusion
+                    matrix because fraud data is usually imbalanced.
+                  </p>
+                </div>
+              </article>
+            </div>
+
+            <ConfusionMatrix matrix={testMetrics.confusion_matrix} />
+          </StorySection>
+
+          <StorySection
+            step="Step 4"
+            title="Give Manual Input and See the Prediction"
+            icon={Play}
+            intro="After the model is trained, you can enter a transaction manually and explain the prediction in simple terms."
+          >
+            <div className="story-grid two-column">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Play size={18} />
+                  <h3>Prediction Input</h3>
+                </div>
+                <form
+                  className="prediction-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleManualPredict();
+                  }}
+                >
+                  <label className="field">
+                    <span>Transaction amount</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={manualInput.amount}
+                      onChange={(event) => setManualInput((current) => ({ ...current, amount: event.target.value }))}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Transaction hour (0 to 23)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max="23"
+                      value={manualInput.time}
+                      onChange={(event) => setManualInput((current) => ({ ...current, time: event.target.value }))}
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Location</span>
+                    <select
+                      value={manualInput.location}
+                      onChange={(event) => setManualInput((current) => ({ ...current, location: event.target.value }))}
+                    >
+                      {locationOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Merchant type</span>
+                    <select
+                      value={manualInput.merchant}
+                      onChange={(event) => setManualInput((current) => ({ ...current, merchant: event.target.value }))}
+                    >
+                      {merchantOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <button className="primary-button" type="submit" disabled={!hasTrainedModel}>
+                    <Play size={16} />
+                    Predict Transaction
+                  </button>
+
+                  {!hasTrainedModel ? (
+                    <p className="helper-copy">Train the model first to enable live prediction.</p>
+                  ) : null}
+                </form>
+              </article>
+
+              <article className="surface-card result-card">
+                <div className="card-heading">
+                  <WandSparkles size={18} />
+                  <h3>Prediction Result</h3>
+                </div>
+                {manualResult ? (
+                  <>
+                    <div className="result-banner">
+                      <span className={`result-pill ${manualResult.prediction === 1 ? "danger" : "safe"}`}>
+                        {manualResult.prediction_label}
+                      </span>
+                      <strong>{formatPercent(manualResult.probability)}</strong>
                     </div>
-                  </div>
-                  <div className="readiness-list">
-                    {presentationData.demo_readiness.checks.map((item) => (
-                      <article key={item.id} className={`readiness-card ${item.status}`}>
-                        <header>
-                          <strong>{item.label}</strong>
-                          <span>{formatReadiness(item.status)}</span>
-                        </header>
-                        <p>{item.detail}</p>
-                      </article>
-                    ))}
-                  </div>
-                  <div className="bullet-list">
-                    {presentationData.presentation_tips.map((item) => <div key={item}>{item}</div>)}
-                  </div>
-                </>
-              ) : (
-                <button className="primary-button" onClick={() => void loadPresentation()}>
-                  <GraduationCap size={16} />
-                  Load Presentation View
-                </button>
-              )}
-            </article>
+                    <p className="support-copy">{manualResult.message}</p>
+                    <div className="mini-metrics">
+                      <div>
+                        <span>Model</span>
+                        <strong>{manualResult.model_name}</strong>
+                      </div>
+                      <div>
+                        <span>Threshold</span>
+                        <strong>{formatScore(manualResult.threshold)}</strong>
+                      </div>
+                      <div>
+                        <span>Confidence</span>
+                        <strong>{manualResult.confidence_band}</strong>
+                      </div>
+                    </div>
+                    <div className="signal-list">
+                      {manualResult.risk_signals.map((signal) => (
+                        <span key={signal} className="signal-pill">
+                          {signal}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="empty-copy">
+                    Enter the transaction values and click predict to show the decision live during the demo.
+                  </p>
+                )}
+              </article>
+            </div>
+          </StorySection>
 
-            <article className="panel">
-              <div className="panel-header">
-                <GraduationCap size={18} />
-                <h2>Report and Export</h2>
-              </div>
-              {presentationData ? (
-                <>
-                  <div className="action-row">
-                    <button className="primary-button" onClick={() => void handleCopyMarkdownReport()}>
-                      <Copy size={16} />
-                      Copy Markdown
-                    </button>
-                    <button
-                      className="primary-button muted"
-                      onClick={() => void handleDownloadPresentationExport("markdown")}
-                    >
-                      <Download size={16} />
-                      Download Markdown
-                    </button>
-                    <button
-                      className="primary-button muted"
-                      onClick={() => void handleDownloadPresentationExport("json")}
-                    >
-                      <Download size={16} />
-                      Download JSON
-                    </button>
-                  </div>
-                  <div className="summary-stack">
-                    {presentationData.report_sections.map((section) => (
-                      <article key={section.title} className="summary-card">
-                        <strong>{section.title}</strong>
-                        <p>{mode === "simple" ? section.simple_text : section.technical_text}</p>
-                      </article>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <p className="empty-state">Load the presentation view to generate the report pack.</p>
-              )}
-            </article>
-
-            <article className="panel wide">
-              <div className="panel-header">
-                <GraduationCap size={18} />
-                <h2>Diagram Explorer</h2>
-              </div>
-              {presentationData ? (
-                <div className="diagram-workbench">
-                  <aside className="diagram-list">
-                    {diagrams.map((diagram) => (
-                      <button
-                        key={diagram.id}
-                        className={diagram.id === activeDiagram?.id ? "active" : ""}
-                        onClick={() => setSelectedDiagramId(diagram.id)}
-                      >
-                        <strong>{diagram.title}</strong>
-                        <span>{diagram.course_focus}</span>
-                      </button>
-                    ))}
-                  </aside>
-                  <div className="diagram-stage">
-                    {activeDiagram ? (
-                      <>
-                        <article className="diagram-card active-diagram-card">
-                          <header>
-                            <div>
-                              <strong>{activeDiagram.title}</strong>
-                              <span>{activeDiagram.description}</span>
-                            </div>
-                            <span className="course-badge">{activeDiagram.course_focus}</span>
-                          </header>
-                          <div className="bullet-list compact-list">
-                            {activeDiagram.talking_points.map((item) => <div key={item}>{item}</div>)}
-                          </div>
-                          <div className="action-row">
-                            <button
-                              className="primary-button"
-                              onClick={() => void handleCopyMermaidSource(activeDiagram.mermaid)}
-                            >
-                              <Copy size={16} />
-                              Copy Mermaid
-                            </button>
-                            <button
-                              className="primary-button muted"
-                              onClick={() =>
-                                downloadTextFile(
-                                  `${activeDiagram.id}.mmd`,
-                                  activeDiagram.mermaid,
-                                  "text/plain;charset=utf-8"
-                                )
-                              }
-                            >
-                              <Download size={16} />
-                              Download Source
-                            </button>
-                          </div>
-                        </article>
-                        <MermaidDiagram chart={activeDiagram.mermaid} title={activeDiagram.title} />
-                      </>
-                    ) : (
-                      <p className="empty-state">No diagrams are available yet.</p>
-                    )}
-                  </div>
+          <StorySection
+            step="Step 5"
+            title="Show Prediction on Unseen Test Data"
+            icon={Gauge}
+            intro="Finish by testing the saved model on held-out samples so you can show real-time inference on data the model did not see during training."
+          >
+            <div className="story-grid two-column">
+              <article className="surface-card">
+                <div className="card-heading">
+                  <Gauge size={18} />
+                  <h3>Held-Out Test Demo</h3>
                 </div>
-              ) : (
-                <p className="empty-state">Load the presentation view to inspect Mermaid diagrams.</p>
-              )}
-            </article>
+                <p className="support-copy">
+                  This button picks the next row from the 20% test split, predicts it live, and compares the
+                  result with the actual class label.
+                </p>
+                <div className="action-row">
+                  <button className="primary-button" onClick={() => void handlePredictTestSample()} disabled={!hasTrainedModel}>
+                    <Play size={16} />
+                    Predict Next Test Sample
+                  </button>
+                </div>
+                {!hasTrainedModel ? (
+                  <p className="helper-copy">Train the model first to enable test-sample prediction.</p>
+                ) : null}
+              </article>
 
-            <article className="panel wide">
-              <div className="panel-header">
-                <GraduationCap size={18} />
-                <h2>Viva Notes</h2>
-              </div>
-              <div className="summary-stack">
-                {(presentationData?.viva_notes || []).map((note) => (
-                  <article key={note.question} className="summary-card">
-                    <strong>{note.question}</strong>
-                    <p>{note.answer}</p>
-                  </article>
-                ))}
-              </div>
-            </article>
-          </section>
-        ) : null}
-      </main>
+              <article className="surface-card result-card">
+                <div className="card-heading">
+                  <CheckCircle2 size={18} />
+                  <h3>Test Sample Result</h3>
+                </div>
+                {testSample ? (
+                  <>
+                    <div className="result-banner">
+                      <span className={`result-pill ${testSample.correct ? "safe" : "warning"}`}>
+                        {testSample.correct ? "Correct" : "Mismatch"}
+                      </span>
+                      <strong>
+                        Sample {testSample.sample_index + 1} / {testSample.total_test_samples}
+                      </strong>
+                    </div>
+                    <p className="support-copy">{testSample.review_text}</p>
+                    <div className="mini-metrics">
+                      <div>
+                        <span>Predicted</span>
+                        <strong>{testSample.prediction_label}</strong>
+                      </div>
+                      <div>
+                        <span>Actual</span>
+                        <strong>{testSample.actual_label_text}</strong>
+                      </div>
+                      <div>
+                        <span>Probability</span>
+                        <strong>{formatPercent(testSample.probability)}</strong>
+                      </div>
+                    </div>
+                    <div className="sample-kv-grid">
+                      <div>
+                        <span>Amount</span>
+                        <strong>{testSample.input.amount}</strong>
+                      </div>
+                      <div>
+                        <span>Time</span>
+                        <strong>{testSample.input.time}</strong>
+                      </div>
+                      <div>
+                        <span>Location</span>
+                        <strong>{testSample.input.location}</strong>
+                      </div>
+                      <div>
+                        <span>Merchant</span>
+                        <strong>{testSample.input.merchant}</strong>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="empty-copy">
+                    Click the button to predict one unseen test row and compare the output with the real label.
+                  </p>
+                )}
+              </article>
+            </div>
+          </StorySection>
+        </main>
+      ) : null}
+
+      {activeSection === "db" ? (
+        <PlaceholderSection
+          icon={Database}
+          title="DB Section"
+          description="The UI is already simplified into a 3-section presentation layout. This DB area is intentionally clean and ready for the database-specific flow you want to add next."
+          cards={[
+            {
+              title: "Suggested story",
+              text: "Show the tables, explain why they are separated, then connect them to predictions and alerts."
+            },
+            {
+              title: "Ready space",
+              text: "This section can be turned into schema overview, ER diagram, and normalization explanation in the next prompt."
+            },
+            {
+              title: "Current status",
+              text: "Kept intentionally minimal so your evaluation flow stays focused on AI first."
+            }
+          ]}
+        />
+      ) : null}
+
+      {activeSection === "sda" ? (
+        <PlaceholderSection
+          icon={GraduationCap}
+          title="SDA Section"
+          description="This section is reserved for the SDA flow you will provide next, so the layout stays consistent and presentable."
+          cards={[
+            {
+              title: "Suggested story",
+              text: "Explain the system modules, the backend workflow, and how the frontend talks to the API."
+            },
+            {
+              title: "Ready space",
+              text: "This area can become an architecture walkthrough, API flow, and viva support section."
+            },
+            {
+              title: "Current status",
+              text: "Left clean on purpose so we can design it around your exact SDA prompt."
+            }
+          ]}
+        />
+      ) : null}
     </div>
   );
 }

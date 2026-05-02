@@ -26,6 +26,11 @@ from src.db import (  # noqa: E402
 )
 from src.predict import load_model_metadata  # noqa: E402
 from src.services.dataset_profiling import profile_csv_dataset  # noqa: E402
+from src.services.ai_demo import (  # noqa: E402
+    build_ai_dataset_preview,
+    predict_holdout_test_sample,
+    run_manual_prediction,
+)
 from src.services.presentation_support import (  # noqa: E402
     build_presentation_export_bundle,
     build_presentation_support_payload,
@@ -41,6 +46,13 @@ class ProfilePathRequest(BaseModel):
 
 class WorkflowRequest(BaseModel):
     force_train: bool = False
+
+
+class ManualPredictionRequest(BaseModel):
+    amount: float
+    time: int
+    location: str
+    merchant: str
 
 
 app = FastAPI(title="Fraud Detection Project API", version="0.1.0")
@@ -218,6 +230,37 @@ def recommendations_current() -> dict[str, Any]:
     except Exception as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     return _serialize(result)
+
+
+@app.get("/api/ai/dataset-preview")
+def ai_dataset_preview() -> dict[str, Any]:
+    try:
+        payload = build_ai_dataset_preview()
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return _serialize(payload)
+
+
+@app.post("/api/predict/manual")
+def predict_manual(request: ManualPredictionRequest) -> dict[str, Any]:
+    try:
+        payload = run_manual_prediction(request.model_dump())
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return _serialize(payload)
+
+
+@app.get("/api/predict/test-sample")
+def predict_test_sample(index: int = Query(default=0, ge=0)) -> dict[str, Any]:
+    try:
+        payload = predict_holdout_test_sample(index=index)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return _serialize(payload)
 
 
 @app.get("/api/model/latest")
