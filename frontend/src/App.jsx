@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -12,8 +12,20 @@ import {
   Rows3,
   WandSparkles
 } from "lucide-react";
+import MermaidDiagram from "./components/MermaidDiagram";
+import {
+  DEMO_AI_DATASET_PREVIEW,
+  DEMO_MODEL_DATA,
+  DEMO_PRESENTATION_DATA,
+  DEMO_RECOMMENDATION,
+  DEMO_SDA_CONTENT,
+  DEMO_SCHEMA_DATA,
+  buildOfflineManualPrediction,
+  buildOfflineTestSample
+} from "./demoData";
 
 const API_BASE = "http://127.0.0.1:8000/api";
+const BACKEND_START_COMMAND = ".\\start_backend.bat";
 
 const sectionTabs = [
   {
@@ -25,13 +37,13 @@ const sectionTabs = [
   {
     id: "db",
     label: "DB",
-    subtitle: "Database section reserved for your next prompt",
+    subtitle: "Source data, table breakdown, normalization, and ER diagram",
     icon: Database
   },
   {
     id: "sda",
     label: "SDA",
-    subtitle: "SDA section reserved for your next prompt",
+    subtitle: "Architecture and software design flow for the final tab",
     icon: GraduationCap
   }
 ];
@@ -44,14 +56,59 @@ const aiSteps = [
   { number: "05", title: "Test on unseen data", icon: Gauge }
 ];
 
+const dbSteps = [
+  { number: "01", title: "Show source data", icon: Rows3 },
+  { number: "02", title: "Break it into tables", icon: Database },
+  { number: "03", title: "Explain normalization", icon: CheckCircle2 },
+  { number: "04", title: "Present the ER diagram", icon: Activity }
+];
+
+const sdaSteps = [
+  { number: "01", title: "Introduction", icon: GraduationCap },
+  { number: "02", title: "Workflow", icon: Activity },
+  { number: "03", title: "Architecture", icon: Database },
+  { number: "04", title: "Testing", icon: CheckCircle2 }
+];
+
+const DB_LAYER_ORDER = ["raw_training", "raw_profiling", "operational", "analytics"];
+const DB_CORE_TABLE_NAMES = [
+  "kaggle_transactions",
+  "raw_dataset_uploads",
+  "dataset_profiles",
+  "users",
+  "transactions",
+  "predictions",
+  "fraud_alerts"
+];
+const DB_LAYER_COPY = {
+  raw_training: {
+    label: "Raw training layer",
+    description: "This keeps the original imported fraud rows in a wide form before they are mapped into the smaller project schema."
+  },
+  raw_profiling: {
+    label: "Raw profiling layer",
+    description: "This records which dataset file was uploaded or selected so the source can be tracked separately."
+  },
+  operational: {
+    label: "Operational layer",
+    description: "These are the live workflow tables used during transaction processing, prediction storage, and alert generation."
+  },
+  analytics: {
+    label: "Analytics and audit layer",
+    description: "These tables store profiling summaries plus training history so the system stays explainable."
+  }
+};
+
 const defaultManualInput = {
   amount: 12450.75,
   time: 23,
   location: "Lahore",
   merchant: "electronics_store"
 };
-const API_RETRY_DELAY_MS = 5000;
-const MAX_API_RETRIES = 12;
+
+function offlinePresentationMessage() {
+  return `Offline presentation mode is active. The UI is using local demo data because the backend is unavailable. Start ${BACKEND_START_COMMAND} for live API data.`;
+}
 
 function formatPercent(value, digits = 1) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
@@ -72,6 +129,21 @@ function formatCount(value) {
     return "N/A";
   }
   return Number(value).toLocaleString();
+}
+
+function formatBytes(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return "N/A";
+  }
+
+  const numericValue = Number(value);
+  if (numericValue < 1024) {
+    return `${numericValue} B`;
+  }
+  if (numericValue < 1024 * 1024) {
+    return `${(numericValue / 1024).toFixed(1)} KB`;
+  }
+  return `${(numericValue / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function titleCase(value) {
@@ -99,6 +171,30 @@ function statusText(flag) {
     return "N/A";
   }
   return flag ? "Flagged" : "Passed";
+}
+
+function safeParseJson(value, fallback = []) {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
+}
+
+function stripTicks(value) {
+  return String(value || "").replace(/`/g, "");
+}
+
+function getNormalizationVerdict(normalizationSummary) {
+  return (normalizationSummary || []).some((note) =>
+    String(note).toLowerCase().includes("not fully normalized")
+  )
+    ? "Mostly 3NF"
+    : "Normalized";
 }
 
 function buildSelectedModelStory(metadata, shortlist) {
@@ -230,9 +326,534 @@ function PlaceholderSection({ icon: Icon, title, description, cards }) {
   );
 }
 
+function SdaListCard({ title, icon: Icon, items }) {
+  return (
+    <article className="sda-list-card">
+      <div className="card-heading">
+        <Icon size={18} />
+        <h3>{title}</h3>
+      </div>
+      <div className="sda-list-stack">
+        {items.map((item) => (
+          <article key={typeof item === "string" ? item : item.name} className="sda-list-item">
+            {typeof item !== "string" ? (
+              <>
+                <strong>{item.name}</strong>
+                <p>{item.detail || item.purpose}</p>
+              </>
+            ) : (
+              <p>{item}</p>
+            )}
+          </article>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function SdaDiagramCard({ diagram }) {
+  return (
+    <article className="sda-diagram-card">
+      <div className="card-heading">
+        <Activity size={18} />
+        <h3>{diagram.title}</h3>
+      </div>
+      <p className="sda-support-copy">{diagram.description}</p>
+      <MermaidDiagram chart={diagram.mermaid} title={diagram.title} />
+      <div className="explain-box">
+        <strong>How to explain it</strong>
+        <p>{diagram.talkingPoint}</p>
+      </div>
+    </article>
+  );
+}
+
+function DbLayerCard({ layer, tables }) {
+  const copy = DB_LAYER_COPY[layer] || {
+    label: titleCase(layer),
+    description: "This group is part of the current database schema."
+  };
+
+  return (
+    <article className="db-layer-card">
+      <span className={`db-layer-pill ${layer}`}>{copy.label}</span>
+      <p>{copy.description}</p>
+      <div className="db-token-row">
+        {tables.map((table) => (
+          <span key={table.table_name} className="db-token">
+            {titleCase(table.table_name)}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function DbTableCard({ table }) {
+  return (
+    <article className="db-table-card">
+      <div className="db-table-card-header">
+        <span className={`db-layer-pill ${table.layer}`}>{titleCase(table.layer)}</span>
+        <strong>{titleCase(table.table_name)}</strong>
+      </div>
+      <p>{table.purpose}</p>
+      <div className="db-table-meta">
+        <div>
+          <span>Primary key</span>
+          <strong>{table.primary_key_columns?.join(", ") || "N/A"}</strong>
+        </div>
+        <div>
+          <span>Foreign keys</span>
+          <strong>{formatCount(table.foreign_keys?.length || 0)}</strong>
+        </div>
+        <div>
+          <span>Indexes</span>
+          <strong>{formatCount(table.index_names?.length || 0)}</strong>
+        </div>
+      </div>
+      <p className="db-relationship-copy">{stripTicks(table.simple_relationship_summary)}</p>
+    </article>
+  );
+}
+
+function DbPresentationSection({ schemaData, presentationData }) {
+  const schemaTables = schemaData?.tables || [];
+  const latestProfile = presentationData?.latest_profile || null;
+  const profileUpload = latestProfile?.upload || null;
+  const profileMetrics = latestProfile?.dataset_profile || null;
+  const featureProfiles = latestProfile?.feature_profiles || [];
+  const profileWarnings = safeParseJson(profileMetrics?.warnings_json, []);
+  const normalizationSummary = schemaData?.normalization_summary || [];
+  const normalizationVerdict = getNormalizationVerdict(normalizationSummary);
+  const erDiagram = (presentationData?.diagrams || []).find((diagram) => diagram.id === "erd") || null;
+  const dbVivaNotes = (presentationData?.viva_notes || []).filter((note) => {
+    const question = String(note.question || "").toLowerCase();
+    return question.includes("normalize") || question.includes("location") || question.includes("database");
+  });
+  const layerGroups = DB_LAYER_ORDER.map((layer) => ({
+    layer,
+    tables: schemaTables.filter((table) => table.layer === layer)
+  })).filter((group) => group.tables.length > 0);
+  const showcaseTables = DB_CORE_TABLE_NAMES.map((tableName) =>
+    schemaTables.find((table) => table.table_name === tableName)
+  ).filter(Boolean);
+  const relationshipTables = showcaseTables.filter((table) => (table.foreign_keys || []).length > 0);
+
+  return (
+    <main className="db-stage">
+      <section className="flow-strip db-flow-strip">
+        {dbSteps.map((step) => {
+          const Icon = step.icon;
+          return (
+            <article key={step.number} className="flow-step">
+              <span>{step.number}</span>
+              <strong>{step.title}</strong>
+              <Icon size={18} />
+            </article>
+          );
+        })}
+      </section>
+
+      <StorySection
+        step="Step 1"
+        title="Start with the Source Data"
+        icon={Rows3}
+        intro="Begin the DBS explanation by showing where the data came from, how large it is, and what the original columns look like."
+      >
+        <div className="story-grid two-column">
+          <article className="surface-card">
+            <div className="card-heading">
+              <Rows3 size={18} />
+              <h3>Latest Profiled Dataset</h3>
+            </div>
+            <div className="metric-strip">
+              <MetricCard label="File" value={profileUpload?.filename || "Not profiled yet"} tone="accent" />
+              <MetricCard label="Rows" value={formatCount(profileMetrics?.row_count ?? profileUpload?.row_count)} />
+              <MetricCard
+                label="Columns"
+                value={formatCount(profileMetrics?.column_count ?? profileUpload?.column_count)}
+              />
+              <MetricCard label="Target" value={profileMetrics?.target_column || profileUpload?.target_column || "N/A"} />
+              <MetricCard label="Duplicates" value={formatCount(profileMetrics?.duplicate_row_count)} tone="warm" />
+              <MetricCard label="Missing cells" value={formatCount(profileMetrics?.missing_cell_count)} tone="warm" />
+            </div>
+            <div className="db-source-copy">
+              <strong>Source path</strong>
+              <p>{profileUpload?.source_path || "Profile a dataset first to show the file path."}</p>
+            </div>
+            <div className="db-source-copy">
+              <strong>File size</strong>
+              <p>{formatBytes(profileUpload?.file_size_bytes)}</p>
+            </div>
+            {profileWarnings.length > 0 ? (
+              <div className="db-note-stack">
+                {profileWarnings.map((warning) => (
+                  <article key={warning} className="db-note-card">
+                    <AlertTriangle size={16} />
+                    <span>{warning}</span>
+                  </article>
+                ))}
+              </div>
+            ) : null}
+          </article>
+
+          <article className="surface-card">
+            <div className="card-heading">
+              <Database size={18} />
+              <h3>How the Raw Data Looks</h3>
+            </div>
+            {featureProfiles.length > 0 ? (
+              <div className="table-shell">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Column</th>
+                      <th>Role</th>
+                      <th>Type</th>
+                      <th>Example values</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {featureProfiles.slice(0, 6).map((feature) => {
+                      const sampleValues = safeParseJson(feature.sample_values_json, []);
+                      return (
+                        <tr key={feature.column_name}>
+                          <td>{feature.column_name}</td>
+                          <td>{titleCase(feature.inferred_role)}</td>
+                          <td>{feature.pandas_dtype}</td>
+                          <td>
+                            <div className="sample-value-row">
+                              {sampleValues.map((sampleValue) => (
+                                <span key={`${feature.column_name}-${sampleValue}`} className="sample-value-chip">
+                                  {sampleValue}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="empty-copy">Profile a dataset first to show the original columns and sample values.</p>
+            )}
+          </article>
+        </div>
+      </StorySection>
+
+      <StorySection
+        step="Step 2"
+        title="Break the Data into Related Tables"
+        icon={Database}
+        intro="This is the core DBS part: instead of one large mixed table, the system stores raw, operational, and audit data separately."
+      >
+        <div className="db-layer-grid">
+          {layerGroups.map((group) => (
+            <DbLayerCard key={group.layer} layer={group.layer} tables={group.tables} />
+          ))}
+        </div>
+
+        <article className="surface-card">
+          <div className="card-heading">
+            <Database size={18} />
+            <h3>Core Tables for the Viva</h3>
+          </div>
+          <div className="db-table-grid">
+            {showcaseTables.map((table) => (
+              <DbTableCard key={table.table_name} table={table} />
+            ))}
+          </div>
+        </article>
+
+        <details className="details-card">
+          <summary>Show all schema tables</summary>
+          <div className="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>Table</th>
+                  <th>Layer</th>
+                  <th>Columns</th>
+                  <th>Foreign keys</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schemaTables.map((table) => (
+                  <tr key={table.table_name}>
+                    <td>{titleCase(table.table_name)}</td>
+                    <td>{titleCase(table.layer)}</td>
+                    <td>{formatCount(table.columns?.length || 0)}</td>
+                    <td>{formatCount(table.foreign_keys?.length || 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </StorySection>
+
+      <StorySection
+        step="Step 3"
+        title="Explain the Normalization Clearly"
+        icon={CheckCircle2}
+        intro="Keep the answer honest and simple: the operational part is mostly normalized, but a few fields stay denormalized for project scope."
+      >
+        <div className="story-grid two-column">
+          <article className="surface-card">
+            <div className="card-heading">
+              <CheckCircle2 size={18} />
+              <h3>Normalization Verdict</h3>
+            </div>
+            <div className="metric-strip">
+              <MetricCard label="Verdict" value={normalizationVerdict} tone="accent" />
+              <MetricCard label="Operational design" value="Separated tables" />
+              <MetricCard label="Still simple" value="Location, merchant" tone="warm" />
+              <MetricCard label="Raw table style" value="Wide by design" />
+            </div>
+            <div className="db-note-stack">
+              {normalizationSummary.map((note) => (
+                <article key={note} className="db-note-card">
+                  <CheckCircle2 size={16} />
+                  <span>{stripTicks(note)}</span>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="surface-card">
+            <div className="card-heading">
+              <WandSparkles size={18} />
+              <h3>Short Viva Answers</h3>
+            </div>
+            <div className="db-viva-grid">
+              {dbVivaNotes.map((note) => (
+                <article key={note.question} className="db-viva-card">
+                  <strong>{note.question}</strong>
+                  <p>{note.answer}</p>
+                </article>
+              ))}
+            </div>
+          </article>
+        </div>
+      </StorySection>
+
+      <StorySection
+        step="Step 4"
+        title="Finish with the ER Diagram"
+        icon={Activity}
+        intro="End the DBS flow with one complete relationship view so you can point to primary keys, foreign keys, and parent-child links."
+      >
+        <div className="story-grid two-column db-diagram-grid">
+          <article className="surface-card">
+            <div className="card-heading">
+              <Database size={18} />
+              <h3>Live ER Diagram</h3>
+            </div>
+            {erDiagram ? (
+              <MermaidDiagram chart={erDiagram.mermaid} title={erDiagram.title} />
+            ) : (
+              <p className="empty-copy">The ER diagram will appear here when the backend schema data is available.</p>
+            )}
+          </article>
+
+          <article className="surface-card">
+            <div className="card-heading">
+              <CheckCircle2 size={18} />
+              <h3>Main Relationships to Say Aloud</h3>
+            </div>
+            <div className="db-note-stack">
+              {relationshipTables.map((table) => (
+                <article key={table.table_name} className="db-note-card">
+                  <Database size={16} />
+                  <span>{stripTicks(table.simple_relationship_summary)}</span>
+                </article>
+              ))}
+            </div>
+            {erDiagram?.talking_points?.length ? (
+              <div className="explain-box">
+                <strong>Presentation tip</strong>
+                <p>{erDiagram.talking_points[0]}</p>
+              </div>
+            ) : null}
+          </article>
+        </div>
+      </StorySection>
+    </main>
+  );
+}
+
+function SdaPresentationSection({ sdaContent }) {
+  const {
+    introduction,
+    problemStatement,
+    methodology,
+    architecture,
+    toolsAndTechniques,
+    guiDesign,
+    validations,
+    functionalRequirements,
+    nonFunctionalRequirements,
+    outsourceLibraries,
+    testCases,
+    diagrams
+  } = sdaContent;
+
+  const methodologyDiagrams = diagrams.filter((diagram) => ["use_case", "activity"].includes(diagram.id));
+  const architectureDiagrams = diagrams.filter((diagram) =>
+    ["network", "sequence", "interaction", "collaboration", "component"].includes(diagram.id)
+  );
+  const verificationDiagrams = diagrams.filter((diagram) => diagram.id === "state");
+
+  return (
+    <main className="sda-stage">
+      <section className="flow-strip sda-flow-strip">
+        {sdaSteps.map((step) => {
+          const Icon = step.icon;
+          return (
+            <article key={step.number} className="flow-step">
+              <span>{step.number}</span>
+              <strong>{step.title}</strong>
+              <Icon size={18} />
+            </article>
+          );
+        })}
+      </section>
+
+      <StorySection
+        step="Part 1"
+        title="Introduction and Problem Statement"
+        icon={GraduationCap}
+        intro="Start the SDA section by explaining what the project is, what problem it solves, and why the interface is designed for presentation."
+      >
+        <div className="story-grid two-column">
+          <article className="surface-card">
+            <div className="card-heading">
+              <GraduationCap size={18} />
+              <h3>Introduction</h3>
+            </div>
+            <p className="support-copy">{introduction}</p>
+            <div className="explain-box">
+              <strong>Working project summary</strong>
+              <p>
+                The system profiles fraud-related data, stores structured records, evaluates models,
+                predicts suspicious transactions, and presents the full workflow in one explainable UI.
+              </p>
+            </div>
+          </article>
+
+          <article className="surface-card">
+            <div className="card-heading">
+              <AlertTriangle size={18} />
+              <h3>Problem Statement</h3>
+            </div>
+            <p className="support-copy">{problemStatement}</p>
+            <div className="metric-strip">
+              <MetricCard label="Subjects covered" value="AI, DBS, SDA" tone="accent" />
+              <MetricCard label="Project mode" value="Local demo system" />
+              <MetricCard label="Presentation support" value="Diagrams + UI" tone="warm" />
+            </div>
+          </article>
+        </div>
+      </StorySection>
+
+      <StorySection
+        step="Part 2"
+        title="Methodology and Workflow"
+        icon={Activity}
+        intro="This part explains the process the project follows, from understanding data to generating final fraud outputs."
+      >
+        <div className="story-grid two-column">
+          <SdaListCard title="Methodology / Workflow" icon={Activity} items={methodology} />
+          <SdaListCard title="GUI Design Principles" icon={WandSparkles} items={guiDesign} />
+        </div>
+        <div className="sda-diagram-grid">
+          {methodologyDiagrams.map((diagram) => (
+            <SdaDiagramCard key={diagram.id} diagram={diagram} />
+          ))}
+        </div>
+      </StorySection>
+
+      <StorySection
+        step="Part 3"
+        title="Application Architecture and Tools"
+        icon={Database}
+        intro="Use these diagrams to explain how the frontend, backend, services, database, and model artifacts collaborate."
+      >
+        <div className="story-grid two-column">
+          <SdaListCard title="Application Architecture" icon={Database} items={architecture} />
+          <SdaListCard title="Tools and Techniques" icon={Brain} items={toolsAndTechniques} />
+        </div>
+        <div className="sda-diagram-grid">
+          {architectureDiagrams.map((diagram) => (
+            <SdaDiagramCard key={diagram.id} diagram={diagram} />
+          ))}
+        </div>
+      </StorySection>
+
+      <StorySection
+        step="Part 4"
+        title="Requirements, Validation, Testing, and Libraries"
+        icon={CheckCircle2}
+        intro="Finish the SDA explanation with concrete software-engineering details: requirements, validations, test cases, external libraries, and system state transitions."
+      >
+        <div className="story-grid two-column">
+          <SdaListCard title="Functional Requirements" icon={CheckCircle2} items={functionalRequirements} />
+          <SdaListCard title="Non-Functional Requirements" icon={Gauge} items={nonFunctionalRequirements} />
+        </div>
+
+        <div className="story-grid two-column">
+          <SdaListCard title="Input Validations and GUI Checks" icon={Rows3} items={validations} />
+          <SdaListCard title="Outsource Libraries" icon={Brain} items={outsourceLibraries} />
+        </div>
+
+        <article className="surface-card">
+          <div className="card-heading">
+            <CheckCircle2 size={18} />
+            <h3>Testing with Test Cases</h3>
+          </div>
+          <div className="table-shell">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Scenario</th>
+                  <th>Input</th>
+                  <th>Expected Result</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {testCases.map((testCase) => (
+                  <tr key={testCase.id}>
+                    <td>{testCase.id}</td>
+                    <td>{testCase.scenario}</td>
+                    <td>{testCase.input}</td>
+                    <td>{testCase.expected}</td>
+                    <td>{testCase.result}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+
+        <div className="sda-diagram-grid">
+          {verificationDiagrams.map((diagram) => (
+            <SdaDiagramCard key={diagram.id} diagram={diagram} />
+          ))}
+        </div>
+      </StorySection>
+    </main>
+  );
+}
+
 function App() {
-  const [activeSection, setActiveSection] = useState("ai");
+  const [activeSection, setActiveSection] = useState("db");
   const [datasetPreview, setDatasetPreview] = useState(null);
+  const [schemaData, setSchemaData] = useState(null);
+  const [presentationData, setPresentationData] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
   const [modelData, setModelData] = useState(null);
   const [trainingResult, setTrainingResult] = useState(null);
@@ -243,15 +864,16 @@ function App() {
   const [error, setError] = useState("");
   const [loadingKey, setLoadingKey] = useState("");
   const [connectionNote, setConnectionNote] = useState("");
-  const retryTimeoutRef = useRef(null);
-  const retryAttemptRef = useRef(0);
+  const [backendMode, setBackendMode] = useState("unknown");
 
   useEffect(() => {
-    void loadAiView();
-    return () => {
-      clearRetryTimer();
-    };
-  }, []);
+    if (activeSection === "db" && (!schemaData || !presentationData)) {
+      void loadDbView();
+    }
+    if (activeSection === "ai" && (!datasetPreview || !recommendation || !modelData)) {
+      void loadAiView();
+    }
+  }, [activeSection, datasetPreview, modelData, presentationData, recommendation, schemaData]);
 
   async function apiFetch(path, options = {}) {
     const response = await fetch(`${API_BASE}${path}`, options);
@@ -262,29 +884,34 @@ function App() {
     return payload;
   }
 
-  function clearRetryTimer() {
-    if (retryTimeoutRef.current) {
-      window.clearTimeout(retryTimeoutRef.current);
-      retryTimeoutRef.current = null;
+  async function checkBackendHealth() {
+    try {
+      await apiFetch("/health");
+      return true;
+    } catch {
+      return false;
     }
   }
 
-  function scheduleRetry() {
-    if (retryAttemptRef.current >= MAX_API_RETRIES || retryTimeoutRef.current) {
-      return;
-    }
-
-    retryAttemptRef.current += 1;
-    setConnectionNote(
-      `Backend is starting on ${API_BASE}. Retrying automatically in ${API_RETRY_DELAY_MS / 1000} seconds (${retryAttemptRef.current}/${MAX_API_RETRIES}).`
-    );
-    retryTimeoutRef.current = window.setTimeout(() => {
-      retryTimeoutRef.current = null;
-      void loadAiView(true);
-    }, API_RETRY_DELAY_MS);
+  function loadOfflineAiSnapshot() {
+    setDatasetPreview(DEMO_AI_DATASET_PREVIEW);
+    setRecommendation(DEMO_RECOMMENDATION);
+    setModelData(DEMO_MODEL_DATA);
+    setManualInput(DEMO_AI_DATASET_PREVIEW.manual_input_options.defaults);
+    setBackendMode("offline");
+    setError("");
+    setConnectionNote(offlinePresentationMessage());
   }
 
-  async function loadAiView(isRetry = false) {
+  function loadOfflineDbSnapshot() {
+    setSchemaData(DEMO_SCHEMA_DATA);
+    setPresentationData(DEMO_PRESENTATION_DATA);
+    setBackendMode("offline");
+    setError("");
+    setConnectionNote(offlinePresentationMessage());
+  }
+
+  async function loadAiView() {
     const requestSpecs = [
       { key: "datasetPreview", label: "dataset preview", path: "/ai/dataset-preview" },
       { key: "recommendation", label: "model recommendation", path: "/recommendations/current" },
@@ -292,8 +919,14 @@ function App() {
     ];
 
     try {
-      setLoadingKey(isRetry ? "retrying-api-connection" : "loading-ai-story");
+      setLoadingKey("loading-ai-story");
       setError("");
+
+      const backendReady = await checkBackendHealth();
+      if (!backendReady) {
+        loadOfflineAiSnapshot();
+        return;
+      }
 
       const results = await Promise.allSettled(requestSpecs.map((item) => apiFetch(item.path)));
       const failedLabels = [];
@@ -323,14 +956,12 @@ function App() {
       });
 
       if (successCount > 0) {
-        clearRetryTimer();
-        retryAttemptRef.current = 0;
+        setBackendMode("live");
         setConnectionNote("");
       }
 
       if (failedLabels.length === requestSpecs.length) {
-        setError(`Backend is not ready yet at ${API_BASE}.`);
-        scheduleRetry();
+        loadOfflineAiSnapshot();
         return;
       }
 
@@ -340,8 +971,44 @@ function App() {
         setError("");
       }
     } catch (requestError) {
-      setError(requestError.message || `Backend is not ready yet at ${API_BASE}.`);
-      scheduleRetry();
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      }
+      loadOfflineAiSnapshot();
+    } finally {
+      setLoadingKey("");
+    }
+  }
+
+  async function loadDbView(forceRefresh = false) {
+    if (!forceRefresh && schemaData && presentationData) {
+      return;
+    }
+
+    try {
+      setLoadingKey("loading-dbs-story");
+      setError("");
+
+      const backendReady = await checkBackendHealth();
+      if (!backendReady) {
+        loadOfflineDbSnapshot();
+        return;
+      }
+
+      const [schemaPayload, presentationPayload] = await Promise.all([
+        apiFetch("/schema"),
+        apiFetch("/presentation")
+      ]);
+
+      setSchemaData(schemaPayload.schema);
+      setPresentationData(presentationPayload.presentation);
+      setBackendMode("live");
+      setConnectionNote("");
+    } catch (requestError) {
+      if (requestError instanceof Error) {
+        setError(requestError.message);
+      }
+      loadOfflineDbSnapshot();
     } finally {
       setLoadingKey("");
     }
@@ -349,6 +1016,10 @@ function App() {
 
   async function handleTrain() {
     try {
+      if (backendMode === "offline") {
+        setConnectionNote("Offline presentation mode is using a saved snapshot. Live retraining needs the backend.");
+        return;
+      }
       setLoadingKey("training-model");
       setError("");
       const payload = await apiFetch("/train", { method: "POST" });
@@ -369,6 +1040,11 @@ function App() {
 
   async function handleManualPredict() {
     try {
+      if (backendMode === "offline") {
+        setManualResult(buildOfflineManualPrediction(manualInput));
+        setConnectionNote(offlinePresentationMessage());
+        return;
+      }
       setLoadingKey("manual-prediction");
       setError("");
       const payload = await apiFetch("/predict/manual", {
@@ -391,6 +1067,13 @@ function App() {
 
   async function handlePredictTestSample() {
     try {
+      if (backendMode === "offline") {
+        const payload = buildOfflineTestSample(testSampleIndex);
+        setTestSample(payload);
+        setTestSampleIndex(payload.next_index || 0);
+        setConnectionNote(offlinePresentationMessage());
+        return;
+      }
       setLoadingKey("held-out-test-sample");
       setError("");
       const payload = await apiFetch(`/predict/test-sample?index=${testSampleIndex}`);
@@ -428,6 +1111,76 @@ function App() {
   const selectedModelStory = buildSelectedModelStory(metadata, shortlist);
   const locationOptions = datasetPreview?.manual_input_options?.location_options || [manualInput.location];
   const merchantOptions = datasetPreview?.manual_input_options?.merchant_options || [manualInput.merchant];
+  const isOfflineMode = backendMode === "offline";
+  const sdaContent = DEMO_SDA_CONTENT;
+  const dbNormalizationVerdict = getNormalizationVerdict(schemaData?.normalization_summary || []);
+  const dbTableCount = schemaData?.tables?.length || 0;
+  const dbOperationalTableCount =
+    schemaData?.tables?.filter((table) => table.layer === "operational").length || 0;
+  const dbProfileRows =
+    presentationData?.latest_profile?.dataset_profile?.row_count ||
+    presentationData?.latest_profile?.upload?.row_count ||
+    null;
+
+  function handleSdaRefresh() {
+    setConnectionNote("SDA section uses built-in presentation content and Mermaid diagrams.");
+    setError("");
+  }
+
+  const currentHero =
+    activeSection === "db"
+      ? {
+          eyebrow: "DBS Presentation UI",
+          title: "Source Data, Table Design, and ER Diagram",
+          description:
+            "A clean database presentation flow: start from the source data, show how the tables are separated, explain normalization, and finish with the ER diagram.",
+          actionLabel: "Reload DB Data",
+          actionNote:
+            isOfflineMode
+              ? offlinePresentationMessage()
+              : `This tab reads the live schema explanation from the backend. Start it with ${BACKEND_START_COMMAND}.`,
+          action: () => void loadDbView(true),
+          metrics: [
+            { label: "Profiled rows", value: formatCount(dbProfileRows) },
+            { label: "Schema tables", value: formatCount(dbTableCount) },
+            { label: "Operational tables", value: formatCount(dbOperationalTableCount) },
+            { label: "Normalization", value: dbNormalizationVerdict }
+          ]
+        }
+      : activeSection === "sda"
+        ? {
+            eyebrow: "SDA Presentation UI",
+            title: "Software Design and Architecture",
+            description:
+              "This section explains the working project through architecture content, requirements, testing notes, and a full diagram gallery designed for the SDA viva.",
+            actionLabel: "Refresh SDA View",
+            actionNote:
+              "This tab is fully presentation-ready offline and includes use case, activity, network, sequence, interaction, collaboration, component, and state diagrams.",
+            action: handleSdaRefresh,
+            metrics: [
+              { label: "Diagrams", value: formatCount(sdaContent.diagrams.length) },
+              { label: "Functional reqs", value: formatCount(sdaContent.functionalRequirements.length) },
+              { label: "Test cases", value: formatCount(sdaContent.testCases.length) },
+              { label: "Libraries", value: formatCount(sdaContent.outsourceLibraries.length) }
+            ]
+          }
+        : {
+            eyebrow: "Evaluation Day Presentation UI",
+            title: "AI Fraud Detection System",
+            description:
+              "A simplified, explainable interface built for presentation: show the dataset, justify the model, train it, give manual inputs, and finally test it on unseen data in real time.",
+            actionLabel: "Reload AI Data",
+            actionNote: isOfflineMode
+              ? offlinePresentationMessage()
+              : `If the backend is not running yet, start it with ${BACKEND_START_COMMAND}.`,
+            action: () => void loadAiView(),
+            metrics: [
+              { label: "Dataset rows", value: formatCount(datasetPreview?.sample_count) },
+              { label: "Fraud rate", value: formatPercent(datasetPreview?.fraud_rate) },
+              { label: "Selected model", value: selectedModel },
+              { label: "Test accuracy", value: formatPercent(testMetrics?.accuracy) }
+            ]
+          };
 
   return (
     <div className="presentation-shell">
@@ -436,12 +1189,9 @@ function App() {
 
       <header className="hero-panel">
         <div className="hero-copy">
-          <div className="hero-eyebrow">Evaluation Day Presentation UI</div>
-          <h1>AI Fraud Detection System</h1>
-          <p>
-            A simplified, explainable interface built for presentation: show the dataset, justify the
-            model, train it, give manual inputs, and finally test it on unseen data in real time.
-          </p>
+          <div className="hero-eyebrow">{currentHero.eyebrow}</div>
+          <h1>{currentHero.title}</h1>
+          <p>{currentHero.description}</p>
         </div>
 
         <div className="section-tab-row" aria-label="Main presentation sections">
@@ -458,20 +1208,17 @@ function App() {
         </div>
 
         <div className="hero-action-row">
-          <button className="ghost-button" onClick={() => void loadAiView()}>
+          <button className="ghost-button" onClick={currentHero.action}>
             <RefreshCw size={16} />
-            Reload AI Data
+            {currentHero.actionLabel}
           </button>
-          <span className="hero-action-note">
-            If the backend is still starting, this page now retries automatically.
-          </span>
+          <span className="hero-action-note">{currentHero.actionNote}</span>
         </div>
 
         <div className="hero-metric-row">
-          <HeroMetric label="Dataset rows" value={formatCount(datasetPreview?.sample_count)} />
-          <HeroMetric label="Fraud rate" value={formatPercent(datasetPreview?.fraud_rate)} />
-          <HeroMetric label="Selected model" value={selectedModel} />
-          <HeroMetric label="Test accuracy" value={formatPercent(testMetrics?.accuracy)} />
+          {currentHero.metrics.map((metric) => (
+            <HeroMetric key={metric.label} label={metric.label} value={metric.value} />
+          ))}
         </div>
       </header>
 
@@ -694,15 +1441,20 @@ function App() {
                   update the saved model metrics.
                 </p>
                 <div className="action-row">
-                  <button className="primary-button" onClick={() => void handleTrain()}>
+                  <button className="primary-button" onClick={() => void handleTrain()} disabled={isOfflineMode}>
                     <Play size={16} />
-                    {hasTrainedModel ? "Retrain Model" : "Train Model"}
+                    {isOfflineMode ? "Training Disabled Offline" : hasTrainedModel ? "Retrain Model" : "Train Model"}
                   </button>
                   <button className="secondary-button" onClick={() => void loadAiView()}>
                     <RefreshCw size={16} />
                     Refresh View
                   </button>
                 </div>
+                {isOfflineMode ? (
+                  <p className="helper-copy">
+                    Offline presentation mode uses a saved snapshot. Live retraining needs the backend.
+                  </p>
+                ) : null}
               </article>
 
               <article className="surface-card">
@@ -943,47 +1695,11 @@ function App() {
       ) : null}
 
       {activeSection === "db" ? (
-        <PlaceholderSection
-          icon={Database}
-          title="DB Section"
-          description="The UI is already simplified into a 3-section presentation layout. This DB area is intentionally clean and ready for the database-specific flow you want to add next."
-          cards={[
-            {
-              title: "Suggested story",
-              text: "Show the tables, explain why they are separated, then connect them to predictions and alerts."
-            },
-            {
-              title: "Ready space",
-              text: "This section can be turned into schema overview, ER diagram, and normalization explanation in the next prompt."
-            },
-            {
-              title: "Current status",
-              text: "Kept intentionally minimal so your evaluation flow stays focused on AI first."
-            }
-          ]}
-        />
+        <DbPresentationSection schemaData={schemaData} presentationData={presentationData} />
       ) : null}
 
       {activeSection === "sda" ? (
-        <PlaceholderSection
-          icon={GraduationCap}
-          title="SDA Section"
-          description="This section is reserved for the SDA flow you will provide next, so the layout stays consistent and presentable."
-          cards={[
-            {
-              title: "Suggested story",
-              text: "Explain the system modules, the backend workflow, and how the frontend talks to the API."
-            },
-            {
-              title: "Ready space",
-              text: "This area can become an architecture walkthrough, API flow, and viva support section."
-            },
-            {
-              title: "Current status",
-              text: "Left clean on purpose so we can design it around your exact SDA prompt."
-            }
-          ]}
-        />
+        <SdaPresentationSection sdaContent={sdaContent} />
       ) : null}
     </div>
   );
