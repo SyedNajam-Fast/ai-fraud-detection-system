@@ -1,418 +1,371 @@
 # System Working Overview
 
-## 1. What This System Is
+## 1. What This System Is Now
 
-This project is a combined Database Systems and AI application for credit card fraud detection.
+This project is no longer only a backend fraud-detection script. It is now a local academic platform with four connected parts:
 
-It has three main responsibilities:
+1. **SQLite database layer** for runtime records, profiling history, and model audit history
+2. **Machine-learning layer** for recommendation-based model selection, training, and prediction
+3. **FastAPI backend** for live system actions
+4. **React/Vite frontend** for AI, DBS, and SDA presentation
 
-1. Keep structured transaction and fraud data in SQLite.
-2. Train and evaluate multiple machine learning models for fraud detection.
-3. Run an end-to-end workflow from a single entrypoint: `src/main.py`.
+The project is designed to be explainable in a viva, easy to run locally, and strong enough to show how database design, AI workflow, and software architecture fit together in one system.
 
-The system is designed so a fresh clone can start from `main.py` and the application will:
+## 2. Recommended Startup Flow
 
-- check whether required Python packages exist,
-- install them from `requirements.txt` if needed,
-- initialize the database,
-- train a model if no valid model metadata exists,
-- run fraud prediction on a sample transaction,
-- store the prediction in the database,
-- create a fraud alert when appropriate.
+### 2.1 Backend
 
-That means the project is not just a model script and not just a database script. It is a workflow-based system where the database and AI parts continuously feed into each other.
+Use the project launcher:
 
-## 2. High-Level Flow
-
-The flow is:
-
-1. User runs `python src/main.py`.
-2. `main.py` checks dependencies and installs missing ones.
-3. `main.py` loads runtime modules only after the environment is ready.
-4. SQLite database tables are created if they do not already exist.
-5. The system checks whether a trained model and its metadata exist.
-6. If not, training starts automatically.
-7. A sample transaction is inserted into the database.
-8. The inserted transaction is fetched back from SQLite.
-9. The transaction is passed into the trained model.
-10. The model produces a fraud probability.
-11. The result is converted into a final fraud prediction using the selected threshold.
-12. The prediction is stored in the database.
-13. If fraud is predicted, a fraud alert is created.
-14. The system prints the run summary.
-
-## 3. Startup From `main.py`
-
-`src/main.py` is the orchestration layer. It is the file that connects everything.
-
-### 3.1 Dependency bootstrap
-
-Before importing the full runtime stack, `main.py` checks whether the required packages are available:
-
-- `pandas`
-- `numpy`
-- `sklearn`
-- `joblib`
-- `kagglehub`
-
-If one or more are missing, the script runs:
-
-```bash
-python -m pip install -r requirements.txt
+```powershell
+.\start_backend.bat
 ```
 
-This makes the project more practical for a fresh clone because the user does not need to manually install dependencies first.
+This uses the project virtual environment and starts the FastAPI server through `src/run_api.py`.
 
-### 3.2 Lazy runtime imports
+Default backend address:
 
-After the environment is ready, `main.py` imports the modules it needs:
+- `http://127.0.0.1:8000/api`
 
-- `src.db` for database operations
-- `src.insert_data` for inserting a sample transaction
-- `src.predict` for inference
-- `model.train_model` for training when needed
+Health check:
 
-This lazy loading matters because it prevents early failure if packages are missing or the environment is incomplete.
+- `http://127.0.0.1:8000/api/health`
 
-### 3.3 Model availability check
+### 2.2 Frontend
 
-The workflow then checks whether a valid trained model is available.
+In a second terminal:
 
-The system uses two artifacts:
+```powershell
+cd frontend
+npm run dev
+```
 
-- `model/model.pkl` for the saved model pipeline
-- `model/model_metadata.json` for threshold, model selection, and training details
+Default frontend address:
 
-If either the model file or metadata is missing, the system retrains.
+- `http://127.0.0.1:5173/`
 
-This is important because the model artifact alone is not enough for the advanced pipeline. The prediction threshold and model-choice details are part of the final trained state.
+### 2.3 Important behavior
 
-## 4. Database Initialization
+- Start the backend first if you want live API data.
+- The frontend can still open without the backend.
+- When the backend is unavailable, the frontend switches to **offline presentation mode** and uses built-in demo snapshots.
 
-The database is created and initialized through `src.db.initialize_database()`.
+## 3. What the User Can Do
 
-The schema comes from `database/schema.sql`.
+### 3.1 AI tab
 
-### 4.1 Core runtime tables
+The AI tab supports:
 
-The runtime workflow uses these tables:
+- viewing the current training dataset preview,
+- seeing the dataset signals used for recommendation,
+- understanding why the shortlist was chosen,
+- training or retraining the model,
+- trying manual transaction prediction,
+- predicting a held-out test sample live.
 
-- `users`: stores cardholder identity data
-- `transactions`: stores demo transactions used by the workflow
-- `predictions`: stores model predictions and probabilities
-- `fraud_alerts`: stores alerts when a transaction is predicted as fraud
+### 3.2 DB tab
 
-### 4.2 Kaggle training table
+The DB tab supports:
 
-The project also stores the downloaded Kaggle data in:
+- showing the latest profiled dataset,
+- showing raw column examples,
+- explaining table separation by layer,
+- explaining normalization,
+- rendering the ER diagram from live schema data.
+
+### 3.3 SDA tab
+
+The SDA tab supports:
+
+- introduction and problem statement discussion,
+- workflow and methodology explanation,
+- architecture and module explanation,
+- testing, requirements, and diagram discussion.
+
+This tab is largely backed by presentation-ready content so it remains useful even when the backend is not live.
+
+## 4. Main Runtime Paths
+
+## 4.1 End-to-end CLI workflow
+
+If someone runs:
+
+```powershell
+python src\main.py
+```
+
+the system performs this sequence:
+
+1. checks Python dependencies,
+2. installs missing packages if needed,
+3. initializes the SQLite schema,
+4. ensures a valid model and metadata file exist,
+5. trains the model if needed,
+6. inserts a sample user and sample transaction,
+7. fetches the stored transaction,
+8. predicts fraud probability,
+9. applies the saved threshold,
+10. stores the prediction,
+11. creates a fraud alert if fraud is predicted,
+12. prints a workflow summary.
+
+## 4.2 Dataset profiling flow
+
+The profiling flow works through CLI or API:
+
+1. a CSV path is selected or a file is uploaded,
+2. the dataset is loaded into pandas,
+3. row count, column count, duplicates, missing cells, and target candidates are calculated,
+4. each column gets a role, data-type classification, and simple explanation,
+5. the profiling results are written into SQLite.
+
+The main persistence tables are:
+
+- `raw_dataset_uploads`
+- `dataset_profiles`
+- `feature_profiles`
+
+## 4.3 Model recommendation and training flow
+
+The training pipeline does more than simply fit one model:
+
+1. load the best available dataset source,
+2. inspect dataset characteristics,
+3. score a 10-model pool,
+4. shortlist the top 3 models,
+5. preprocess the data with a shared pipeline,
+6. train the shortlisted models,
+7. tune the threshold from validation probabilities,
+8. choose the final winner using validation metrics,
+9. save the model and metadata,
+10. store training audit rows in SQLite.
+
+## 4.4 Manual prediction flow
+
+The manual prediction path works like this:
+
+1. user enters amount, hour, location, and merchant,
+2. the backend validates the inputs,
+3. `src/predict.py` loads the saved model and metadata,
+4. the probability is computed,
+5. the saved threshold converts probability into class,
+6. the response includes:
+   - prediction label,
+   - probability,
+   - threshold,
+   - confidence band,
+   - risk signals,
+   - simple explanation text.
+
+## 5. Current Backend Structure
+
+The current backend is split into focused modules.
+
+### 5.1 Core entrypoints
+
+- `src/main.py` for CLI end-to-end workflow
+- `src/run_api.py` for backend startup
+- `src/api/app.py` for REST endpoints
+
+### 5.2 Services
+
+- `src/services/workflow.py` for end-to-end transaction workflow
+- `src/services/dataset_profiling.py` for profiling and explanation of datasets
+- `src/services/schema_explainer.py` for live schema explanation and ER output
+- `src/services/model_recommendation.py` for top-3 shortlist logic
+- `src/services/ai_demo.py` for AI-tab demo features
+- `src/services/presentation_support.py` for diagrams, viva notes, and export bundles
+
+### 5.3 Data and persistence
+
+- `src/db.py` manages all SQLite interaction
+- `database/schema.sql` owns the relational schema
+
+### 5.4 Model logic
+
+- `model/train_model.py` handles training, recommendation, evaluation, and persistence
+- `src/predict.py` handles inference with the saved threshold
+
+## 6. Current Database Design
+
+The live schema currently contains 11 application tables.
+
+### 6.1 Raw training layer
 
 - `kaggle_transactions`
 
-This is the table used for DB-first training from the imported Kaggle CSV.
+This stores imported Kaggle records in wide form for database-first training.
 
-### 4.3 Model registry tables
+### 6.2 Raw profiling layer
 
-To make the project more advanced and academically strong, the database also stores model lifecycle data:
+- `raw_dataset_uploads`
 
+This tracks which dataset file was selected or uploaded.
+
+### 6.3 Operational layer
+
+- `users`
+- `transactions`
+- `predictions`
+- `fraud_alerts`
+
+These are the main runtime workflow tables.
+
+### 6.4 Analytics and audit layer
+
+- `dataset_profiles`
+- `feature_profiles`
 - `model_training_runs`
+- `model_recommendations`
 - `model_candidate_metrics`
 
-These tables record:
+These keep the system explainable and auditable.
 
-- which dataset was used,
-- which model was selected,
-- the decision threshold,
-- train/validation/test counts,
-- F1 and average precision values,
-- overfit and underfit flags,
-- per-model candidate metrics.
+## 7. Current AI Design
 
-That gives the project a real model audit trail instead of only a single saved pickle file.
+### 7.1 Project feature schema
 
-## 5. Data Ingestion Path
-
-The system has a separate path for bringing in the real Kaggle fraud dataset.
-
-### 5.1 Download step
-
-`src/download_dataset.py` uses `kagglehub` to download the dataset:
-
-- dataset name: `mlg-ulb/creditcardfraud`
-- output file: `creditcard.csv`
-- local destination: `data/raw/creditcardfraud/creditcard.csv`
-
-### 5.2 Import step
-
-`src/import_kaggle_to_db.py` reads the CSV, validates its required columns, and inserts the records into `kaggle_transactions` in batches.
-
-This import script does not drive the runtime prediction flow directly. Instead, it feeds the training layer.
-
-That separation is useful because:
-
-- the raw Kaggle data is kept intact,
-- the runtime transaction workflow remains simple,
-- the training pipeline can use the imported data as its source of truth.
-
-## 6. Training Workflow in Detail
-
-The training logic lives in `model/train_model.py`.
-
-This is where the AI side becomes more advanced.
-
-### 6.1 Data source priority
-
-The trainer checks data sources in this order:
-
-1. `kaggle_transactions` in SQLite
-2. `data/fraud_transactions.csv`
-3. synthetic fallback data generated in code
-
-That means the system becomes data-driven if real data is available, but it still remains runnable if the real dataset is absent.
-
-### 6.2 Schema mapping for training
-
-The Kaggle credit card dataset has features like:
-
-- `Time`
-- `Amount`
-- `V1` through `V28`
-- `Class`
-
-The current project runtime uses a different transaction schema with:
+The final project-level training and runtime features are:
 
 - `amount`
 - `time`
 - `location`
 - `merchant`
+
+Target:
+
 - `fraud`
 
-To bridge that gap, the trainer maps Kaggle features into the project schema for the runtime model pipeline.
+### 7.2 Data source fallback order
 
-That mapping is a design choice that keeps the runtime demo coherent while still letting the project use the real Kaggle dataset.
+The system uses:
 
-### 6.3 Candidate model comparison
+1. SQLite `kaggle_transactions`
+2. `data/fraud_transactions.csv`
+3. synthetic fallback data
 
-The training pipeline compares three sklearn models:
+### 7.3 Candidate model pool
 
-- `LogisticRegression`
-- `RandomForestClassifier`
-- `ExtraTreesClassifier`
+The recommendation layer scores these ten models:
 
-Each model gets the same preprocessing pipeline:
+- logistic regression
+- decision tree
+- random forest
+- extra trees
+- gradient boosting
+- hist gradient boosting
+- adaboost
+- svm
+- knn
+- naive bayes
 
-- numeric imputation
-- scaling
-- categorical imputation
-- one-hot encoding
+Only the top 3 shortlisted models are trained in the main comparison stage.
 
-The comparison is not a simple train-once process. The system scores each candidate on validation data and selects the strongest one.
+### 7.4 Model selection logic
 
-### 6.4 Split strategy
+The winner is chosen mainly by:
 
-The data is split into three parts:
+1. validation average precision
+2. validation F1
+3. validation recall
 
-- training set
-- validation set
-- test set
+### 7.5 Threshold logic
 
-This matters because the system does not choose a model only by training performance. It uses validation performance to select the winner, then evaluates the final model on a held-out test set.
+The system does not rely on a fixed threshold of 0.5. It selects the threshold from validation probabilities using precision-recall behavior.
 
-### 6.5 Threshold tuning
+## 8. API Endpoints That Matter
 
-Fraud detection is usually not best with a fixed threshold of 0.5.
+### 8.1 Health and dashboard
 
-The training pipeline computes precision-recall values and chooses a decision threshold that better matches the validation data.
+- `GET /api/health`
+- `GET /api/dashboard`
 
-This is more realistic for fraud work because:
+### 8.2 Dataset and profiling
 
-- fraud classes are often imbalanced,
-- recall is usually important,
-- a threshold can trade precision for better fraud capture.
+- `GET /api/datasets/options`
+- `GET /api/profiles/latest`
+- `POST /api/profile/path`
+- `POST /api/profile/upload`
 
-### 6.6 Overfit and underfit checks
+### 8.3 Schema and presentation
 
-The system also performs automatic fit checks.
+- `GET /api/schema`
+- `GET /api/presentation`
+- `GET /api/presentation/export`
 
-It estimates:
+### 8.4 AI features
 
-- overfit risk by comparing train and validation performance gaps,
-- underfit risk by checking whether the model is weak on both validation F1 and average precision.
+- `GET /api/recommendations/current`
+- `GET /api/ai/dataset-preview`
+- `POST /api/predict/manual`
+- `GET /api/predict/test-sample`
+- `GET /api/model/latest`
+- `POST /api/train`
+- `POST /api/workflow/run`
 
-These checks are not perfect theory-proof diagnostics, but they are a strong academic feature because they show the system is monitoring model quality rather than just printing a score.
+## 9. Current Local State
 
-### 6.7 Model persistence
+At the time of this update:
 
-When training finishes, the system saves:
+- database exists at `data/fraud_detection.db`
+- model artifact exists at `model/model.pkl`
+- metadata exists at `model/model_metadata.json`
+- sample profile dataset exists at `data/samples/sample_profile_dataset.csv`
+- Kaggle CSV is not currently present locally
 
-- the selected pipeline to `model/model.pkl`
-- training metadata to `model/model_metadata.json`
-- training run history to SQLite tables
+Current local model metadata shows:
 
-That means the model is not just stored as a file; it is also traceable and explainable.
+- dataset source: `synthetic:generated`
+- selected model: `logistic_regression`
+- shortlist size: `3`
+- full model pool size: `10`
+- selected threshold: `0.6762725380991143`
 
-## 7. Prediction Workflow in Detail
+Current row counts:
 
-The inference path lives in `src/predict.py` and is used by `src/main.py`.
+- `users`: 1
+- `transactions`: 22
+- `predictions`: 22
+- `fraud_alerts`: 22
+- `kaggle_transactions`: 0
+- `raw_dataset_uploads`: 7
+- `dataset_profiles`: 7
+- `feature_profiles`: 70
+- `model_training_runs`: 10
+- `model_recommendations`: 18
+- `model_candidate_metrics`: 30
 
-### 7.1 Loading the model
+## 10. Offline Mode Behavior
 
-The system loads `model/model.pkl`.
+If the backend is not running:
 
-### 7.2 Loading metadata
+- the frontend checks `/api/health`,
+- AI and DB tabs load demo snapshots from `frontend/src/demoData.js`,
+- SDA content remains presentation-ready,
+- live retraining and live API actions are disabled,
+- the UI shows a clear offline presentation message.
 
-It also loads `model/model_metadata.json` when available.
+This is useful for demos when the backend is temporarily unavailable.
 
-This is important because the threshold used for prediction is not always 0.5.
+## 11. What Is Strong About the Current System
 
-### 7.3 Probability to class conversion
+- It connects AI, DBS, and SDA in one repository.
+- It supports both operational workflow and academic explanation.
+- It persists model and dataset history instead of only printing console output.
+- It has a presentation-oriented frontend instead of relying only on scripts.
+- It remains runnable even without real Kaggle data.
 
-The model produces a fraud probability.
+## 12. Current Limits
 
-Then the system converts that probability into a final class using the stored threshold.
+- local only
+- no authentication
+- no production deployment story
+- no real-time transaction stream
+- no full frontend coverage for every backend action
+- Kaggle mapping into project-level categories is heuristic
 
-So the prediction step is:
+## 13. Best One-Line Description
 
-- model probability output
-- compare against selected threshold
-- class 1 means fraud
-- class 0 means non-fraud
+If someone asks what the system does today, the best short answer is:
 
-### 7.4 Why this matters
-
-This is a stronger design than a fixed hard-coded threshold because the selected threshold comes from the validation stage and matches the chosen model’s behavior.
-
-## 8. Runtime Transaction Workflow
-
-The runtime workflow in `src.main` is the demo transaction pipeline.
-
-### 8.1 Insert a sample transaction
-
-The project inserts a deterministic sample transaction using `src.insert_data.insert_sample_transaction()`.
-
-This is a simple way to demonstrate the database layer without requiring a user to manually type transaction data.
-
-### 8.2 Fetch the same transaction
-
-After insertion, the system fetches the transaction back from the database.
-
-This may look redundant, but it is a deliberate database systems design choice.
-
-It shows:
-
-- the row was actually stored,
-- foreign key relationships are respected,
-- the application can read its own persisted data before model inference.
-
-### 8.3 Build the prediction payload
-
-The fetched database row is converted into a model input payload.
-
-Then the system calls the prediction layer.
-
-### 8.4 Store prediction results
-
-The result is inserted into the `predictions` table.
-
-That means inference is part of the database workflow, not a separate isolated computation.
-
-### 8.5 Create alert when fraud is detected
-
-If the prediction is fraud, the system inserts a row in `fraud_alerts`.
-
-This closes the loop from data entry to model output to actionable alert.
-
-## 9. How the Database and AI Actually Connect
-
-The database and AI components are linked in multiple places:
-
-1. The database stores the input transactions.
-2. The database stores imported training data from Kaggle.
-3. The trainer reads from SQLite when available.
-4. The trainer stores model run metadata back into SQLite.
-5. The predictor reads model metadata to use the right threshold.
-6. The runtime workflow stores predictions and fraud alerts back into SQLite.
-
-This makes the project feel like a real system rather than a one-off ML notebook.
-
-## 10. Why This Is More Advanced Now
-
-Compared with a simple demo script, this project now demonstrates:
-
-- database initialization and persistence,
-- normalized runtime transaction storage,
-- imported external data loading,
-- multi-model selection,
-- threshold tuning,
-- model quality checks,
-- model registry tables,
-- prediction logging,
-- fraud alert creation,
-- a single bootstrapped entrypoint.
-
-That is a much better fit for a DBS + AI course project.
-
-## 11. Step-by-Step Execution Summary
-
-If someone runs `python src/main.py`, the sequence is:
-
-1. Check installed packages.
-2. Install missing packages if needed.
-3. Load the app modules.
-4. Initialize SQLite tables.
-5. Check if a valid model and metadata exist.
-6. Train or retrain if needed.
-7. Insert a sample transaction.
-8. Read the row back from the database.
-9. Build the model input payload.
-10. Predict fraud probability.
-11. Convert probability into a class using the selected threshold.
-12. Store the prediction.
-13. Create an alert if the transaction is fraudulent.
-14. Print the summary.
-
-## 12. Mermaid View
-
-```mermaid
-flowchart TD
-    A[Run src/main.py] --> B[Check dependencies]
-    B -->|missing| C[pip install -r requirements.txt]
-    B -->|ok| D[Load runtime modules]
-    C --> D
-    D --> E[Initialize SQLite schema]
-    E --> F{Model + metadata exist?}
-    F -->|no| G[Train multi-model pipeline]
-    F -->|yes| H[Reuse trained model]
-    G --> I[Save model.pkl]
-    G --> J[Save model_metadata.json]
-    G --> K[Write training registry rows]
-    H --> L[Insert sample transaction]
-    I --> L
-    J --> L
-    K --> L
-    L --> M[Fetch transaction from DB]
-    M --> N[Build prediction payload]
-    N --> O[Predict probability]
-    O --> P[Apply selected threshold]
-    P --> Q[Insert prediction row]
-    Q --> R{Fraud?}
-    R -->|yes| S[Insert fraud_alerts row]
-    R -->|no| T[End]
-    S --> T
-```
-
-## 13. What To Say In a Viva or Report
-
-A simple way to describe the project is:
-
-> This system connects a relational database with an AI fraud detection pipeline. The database stores both runtime transactions and training data, while the AI layer compares multiple models, selects the best one using validation metrics, tunes the threshold, and logs the training run back into the database. The whole application starts from a single entrypoint, which makes the system reproducible and easy to run.
-
-## 14. Future Improvements
-
-If you want to make it even stronger later, the next logical steps are:
-
-- normalize merchant and location values into lookup tables,
-- add cross-validation reporting,
-- add SHAP or feature-importance explanations,
-- add a review/feedback loop for alerts,
-- add a separate native Kaggle feature benchmark model.
-
+> It is a local fraud-detection presentation platform that profiles datasets, explains the database, recommends and trains fraud models, predicts suspicious transactions, stores audit history in SQLite, and presents the whole system through AI, DB, and SDA views.
